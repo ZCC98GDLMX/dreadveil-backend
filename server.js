@@ -435,3 +435,78 @@ app.post("/api/party/transfer-leader", async (req, res) => {
 app.listen(PORT, () => {
   console.log("Server running on port " + PORT);
 });
+
+app.post("/api/party/chat/send", async (req, res) => {
+  const { player, message } = req.body || {};
+
+  console.log("CHAT SEND REQUEST ->", req.body);
+
+  if (!player || !message) {
+    return res.status(400).json({ error: "Missing player or message" });
+  }
+
+  try {
+    const party = await findPartyByPlayer(player);
+
+    if (!party) {
+      return res.status(400).json({ error: "Player is not in a party" });
+    }
+
+    const { error } = await supabase
+      .from("party_messages")
+      .insert({
+        party_id: party.party_id,
+        player_name: player,
+        message_text: message
+      });
+
+    if (error) {
+      console.error("CHAT SEND ERROR ->", error);
+      return res.status(500).json({ error: "Failed to send message" });
+    }
+
+    console.log("CHAT SEND OK ->", { player, message });
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("CHAT SEND EXCEPTION ->", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.get("/api/party/chat/messages", async (req, res) => {
+  const { player } = req.query;
+
+  console.log("CHAT FETCH REQUEST ->", player);
+
+  if (!player) {
+    return res.status(400).json({ error: "Missing player" });
+  }
+
+  try {
+    const party = await findPartyByPlayer(player);
+
+    if (!party) {
+      return res.json({ messages: [] });
+    }
+
+    const { data, error } = await supabase
+      .from("party_messages")
+      .select("*")
+      .eq("party_id", party.party_id)
+      .order("created_at", { ascending: true })
+      .limit(50);
+
+    if (error) {
+      console.error("CHAT FETCH ERROR ->", error);
+      return res.status(500).json({ error: "Failed to fetch messages" });
+    }
+
+    res.json({ messages: data });
+
+  } catch (err) {
+    console.error("CHAT FETCH EXCEPTION ->", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
