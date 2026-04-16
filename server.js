@@ -123,61 +123,99 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("message", async (rawMessage) => {
-    try {
-      const text = rawMessage.toString();
-      console.log("WS MESSAGE ->", text);
+  try {
+    const text = rawMessage.toString();
+    console.log("WS MESSAGE ->", text);
 
-      const data = JSON.parse(text);
-      const type = data.type;
-      const client = wsClients.get(ws);
+    const data = JSON.parse(text);
+    const type = data.type;
+    const client = wsClients.get(ws);
 
-      if (!type) {
-        sendWs(ws, { type: "error", message: "Missing type" });
-        return;
-      }
-
-      if (type === "identify") {
-        const playerName = String(data.player_name || "").trim();
-
-        if (!playerName) {
-          sendWs(ws, { type: "error", message: "Missing player_name" });
-          return;
-        }
-
-        client.player_name = playerName;
-        wsClients.set(ws, client);
-
-        const party = await findPartyByPlayer(playerName);
-        if (party && party.party_id) {
-          joinPartyRoom(ws, party.party_id);
-        }
-
-        sendWs(ws, {
-          type: "identified",
-          player_name: playerName,
-          party_id: party ? party.party_id : null
-        });
-
-        return;
-      }
-
-      if (type === "leave_party_room") {
-        leavePartyRoom(ws);
-        sendWs(ws, { type: "left_party_room" });
-        return;
-      }
-
-      if (type === "ping") {
-        sendWs(ws, { type: "pong" });
-        return;
-      }
-
-      sendWs(ws, { type: "error", message: "Unknown type" });
-    } catch (err) {
-      console.error("WS MESSAGE ERROR:", err);
-      sendWs(ws, { type: "error", message: "Invalid message format" });
+    if (!type) {
+      sendWs(ws, { type: "error", message: "Missing type" });
+      return;
     }
-  });
+
+    // IDENTIFY
+    if (type === "identify") {
+      const playerName = String(data.player_name || "").trim();
+
+      if (!playerName) {
+        sendWs(ws, { type: "error", message: "Missing player_name" });
+        return;
+      }
+
+      client.player_name = playerName;
+      wsClients.set(ws, client);
+
+      const party = await findPartyByPlayer(playerName);
+      if (party && party.party_id) {
+        joinPartyRoom(ws, party.party_id);
+      }
+
+      sendWs(ws, {
+        type: "identified",
+        player_name: playerName,
+        party_id: party ? party.party_id : null
+      });
+
+      return;
+    }
+
+    // LEAVE ROOM
+    if (type === "leave_party_room") {
+      leavePartyRoom(ws);
+      sendWs(ws, { type: "left_party_room" });
+      return;
+    }
+
+    // PING
+    if (type === "ping") {
+      sendWs(ws, { type: "pong" });
+      return;
+    }
+
+    // 🔥 PARTY TYPING (NUEVO)
+    if (type === "party_typing") {
+      const playerName = String(data.player_name || "").trim();
+      const isTyping = Boolean(data.is_typing);
+
+      console.log("TYPING EVENT ->", playerName, isTyping);
+
+      if (!playerName) {
+        sendWs(ws, { type: "error", message: "Missing player_name" });
+        return;
+      }
+
+      const party = await findPartyByPlayer(playerName);
+      if (!party || !party.party_id) {
+        return;
+      }
+
+      const room = partyRooms.get(party.party_id);
+      if (!room) return;
+
+      for (const otherWs of room) {
+        if (otherWs !== ws) {
+          sendWs(otherWs, {
+            type: "party_typing",
+            player_name: playerName,
+            is_typing: isTyping
+          });
+        }
+      }
+
+      return;
+    }
+
+    // ❌ UNKNOWN TYPE (SIEMPRE AL FINAL)
+    sendWs(ws, { type: "error", message: "Unknown type" });
+
+  } catch (err) {
+    console.error("WS MESSAGE ERROR:", err);
+    sendWs(ws, { type: "error", message: "Invalid message format" });
+  }
+});
 
   ws.on("close", () => {
     console.log("WS CLOSED");
@@ -576,7 +614,7 @@ app.post("/api/party/leave", async (req, res) => {
       await broadcastPartySystemMessage(
         party.party_id,
   "   🔴 " + player + " left the party"
-      );
+        );
 
     return res.json({ success: true });
   } catch (error) {
