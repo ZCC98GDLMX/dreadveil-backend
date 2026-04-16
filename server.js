@@ -86,16 +86,27 @@ function broadcastPartyStateChanged(partyId) {
   });
 }
 
-function broadcastPartySystemMessage(partyId, messageText) {
+async function broadcastPartySystemMessage(partyId, messageText) {
   if (!partyId || !messageText) return;
+
+  const { data: insertedMessage, error } = await supabase
+    .from("party_messages")
+    .insert({
+      party_id: partyId,
+      player_name: "SYSTEM",
+      message_text: messageText
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    console.error("SYSTEM MESSAGE INSERT ERROR:", error);
+    return;
+  }
 
   broadcastToParty(partyId, {
     type: "party_system_message",
-    message: {
-      party_id: partyId,
-      message_text: messageText,
-      created_at: new Date().toISOString()
-    }
+    message: insertedMessage
   });
 }
 
@@ -453,7 +464,7 @@ app.post("/api/party/accept", async (req, res) => {
     console.log("ACCEPT OK ->", { from, to, party_id: leaderParty.party_id });
 
     broadcastPartyStateChanged(leaderParty.party_id);
-    broadcastPartySystemMessage(
+    await broadcastPartySystemMessage(
       leaderParty.party_id,
       "🟢 " + player + " joined the party"
     );
@@ -555,17 +566,17 @@ app.post("/api/party/leave", async (req, res) => {
 
       if (updateLeaderError) throw updateLeaderError;
 
-      broadcastPartySystemMessage(
+      await broadcastPartySystemMessage(
         party.party_id,
         "👑 " + newLeader + " is now the leader"
       );
     }
 
     broadcastPartyStateChanged(party.party_id);
-    broadcastPartySystemMessage(
-      party.party_id,
-      "🔴 " + player + " left the party"
-    );
+      await broadcastPartySystemMessage(
+        party.party_id,
+  "   🔴 " + player + " left the party"
+      );
 
     return res.json({ success: true });
   } catch (error) {
@@ -614,9 +625,9 @@ app.post("/api/party/transfer-leader", async (req, res) => {
     console.log("TRANSFER LEADER OK ->", { player, new_leader });
 
     broadcastPartyStateChanged(party.party_id);
-    broadcastPartySystemMessage(
-      party.party_id,
-      "👑 " + new_leader + " is now the leader"
+    await broadcastPartySystemMessage(
+    party.party_id,
+    "👑 " + new_leader + " is now the leader"
     );
 
     return res.json({ success: true });
