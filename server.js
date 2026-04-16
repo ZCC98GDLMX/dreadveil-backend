@@ -33,6 +33,12 @@ const wsClients = new Map();
 const partyRooms = new Map();
 // party_id -> Set<ws>
 
+const combatInstances = new Map();
+// combat_id -> combat instance
+
+const playerCombatIndex = new Map();
+// player_name -> combat_id
+
 function sendWs(ws, payload) {
   if (ws.readyState === 1) {
     ws.send(JSON.stringify(payload));
@@ -208,6 +214,77 @@ wss.on("connection", (ws) => {
       return;
     }
 
+      if (type === "combat_create_request") {
+        const playerName = String(data.player_name || "").trim();
+        const encounterId = String(data.encounter_id || "").trim();
+        const tileId = String(data.tile_id || "").trim();
+
+        console.log("COMBAT CREATE REQUEST ->", {
+         playerName,
+         encounterId,
+         tileId
+         });
+
+         if (!playerName || !encounterId || !tileId) {
+            sendWs(ws, { type: "error", message: "Missing combat_create_request fields" });
+            return;
+         }
+
+          const party = await findPartyByPlayer(playerName);
+          if (!party || !party.party_id) {
+           sendWs(ws, { type: "error", message: "Player is not in a party" });
+           return;
+          }
+
+         const existingCombat = findCombatByPlayer(playerName);
+          if (existingCombat) {
+           sendWs(ws, {
+             type: "combat_state",
+              combat: sanitizeCombatState(existingCombat)
+             });
+             return;
+          }
+
+          const combat = await createPartyCombatInstance(
+           party.party_id,
+           encounterId,
+            tileId,
+          playerName
+         );
+
+        broadcastToParty(party.party_id, {
+           type: "combat_created",
+            combat_id: combat.combat_id,
+           party_id: party.party_id,
+           encounter_id: encounterId,
+            tile_id: tileId
+         });
+
+         broadcastCombatState(combat.combat_id);
+         return;
+      }
+
+    if (type === "combat_state_request") {
+  const playerName = String(data.player_name || "").trim();
+
+  if (!playerName) {
+    sendWs(ws, { type: "error", message: "Missing player_name" });
+    return;
+  }
+
+  const combat = findCombatByPlayer(playerName);
+  if (!combat) {
+    sendWs(ws, { type: "combat_not_found" });
+    return;
+  }
+
+  sendWs(ws, {
+    type: "combat_state",
+    combat: sanitizeCombatState(combat)
+  });
+  return;
+}
+
     // ❌ UNKNOWN TYPE (SIEMPRE AL FINAL)
     sendWs(ws, { type: "error", message: "Unknown type" });
 
@@ -227,6 +304,10 @@ wss.on("connection", (ws) => {
     console.error("WS SOCKET ERROR:", err);
   });
 });
+
+function createCombatId() {
+  return "combat_" + Date.now() + "_" + Math.floor(Math.random() * 100000);
+}
 
 //////////////////////////////////////////////////////////////////
 // 🔥 CONTINÚA TU CÓDIGO NORMAL
@@ -317,6 +398,225 @@ app.get("/api/party/state", async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 });
+
+async function buildPlayerCombatUnit(playerName) {
+  // Fase 1:
+  // usamos valores base estables para crear unidades reales del party
+  // más adelante esto se conectará a stats/equipo reales guardados
+
+  return {
+    unit_id: "player_" + playerName,
+    unit_type: "player",
+    player_name: playerName,
+    display_name: playerName,
+
+    hp: 100,
+    max_hp: 100,
+    ap: 100,
+    max_ap: 100,
+
+    damage_bonus: 10,
+    defense_bonus: 5,
+    armor_penetration: 0,
+
+    skill_sequence: ["Slash"],
+    target_strategy: "first_alive",
+
+    cooldowns: {},
+    sequence_index: 0,
+
+    is_alive: true
+  };
+}
+
+function buildEnemyCombatGroup(encounterId, tileId) {
+  const encounters = {
+    ct_1: {
+      Cinder_Footman: [
+        {
+          unit_id: "enemy_cinder_footman_a",
+          unit_type: "enemy",
+          display_name: "Cinder Footman A",
+          hp: 480,
+          max_hp: 480,
+          ap: 120,
+          max_ap: 120,
+          damage_bonus: 26,
+          defense_bonus: 26,
+          armor_penetration: 6,
+          skill_sequence: ["Slash"],
+          target_strategy: "first_alive",
+          cooldowns: {},
+          sequence_index: 0,
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_cinder_footman_b",
+          unit_type: "enemy",
+          display_name: "Cinder Footman B",
+          hp: 480,
+          max_hp: 480,
+          ap: 120,
+          max_ap: 120,
+          damage_bonus: 26,
+          defense_bonus: 26,
+          armor_penetration: 6,
+          skill_sequence: ["Slash"],
+          target_strategy: "first_alive",
+          cooldowns: {},
+          sequence_index: 0,
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_cinder_footman_c",
+          unit_type: "enemy",
+          display_name: "Cinder Footman C",
+          hp: 440,
+          max_hp: 440,
+          ap: 110,
+          max_ap: 110,
+          damage_bonus: 24,
+          defense_bonus: 24,
+          armor_penetration: 5,
+          skill_sequence: ["Slash"],
+          target_strategy: "first_alive",
+          cooldowns: {},
+          sequence_index: 0,
+          is_alive: true
+        }
+      ],
+
+      Furnace_Hound: [
+        {
+          unit_id: "enemy_furnace_hound_a",
+          unit_type: "enemy",
+          display_name: "Furnace Hound A",
+          hp: 420,
+          max_hp: 420,
+          ap: 130,
+          max_ap: 130,
+          damage_bonus: 34,
+          defense_bonus: 18,
+          armor_penetration: 11,
+          skill_sequence: ["Slash"],
+          target_strategy: "lowest_hp",
+          cooldowns: {},
+          sequence_index: 0,
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_furnace_hound_b",
+          unit_type: "enemy",
+          display_name: "Furnace Hound B",
+          hp: 420,
+          max_hp: 420,
+          ap: 130,
+          max_ap: 130,
+          damage_bonus: 34,
+          defense_bonus: 18,
+          armor_penetration: 11,
+          skill_sequence: ["Slash"],
+          target_strategy: "lowest_hp",
+          cooldowns: {},
+          sequence_index: 0,
+          is_alive: true
+        }
+      ]
+    }
+  };
+
+  const tileEncounters = encounters[tileId];
+  if (!tileEncounters) return [];
+
+  const group = tileEncounters[encounterId];
+  if (!group) return [];
+
+  return JSON.parse(JSON.stringify(group));
+}
+
+function sanitizeCombatState(combat) {
+  return {
+    combat_id: combat.combat_id,
+    party_id: combat.party_id,
+    tile_id: combat.tile_id,
+    encounter_id: combat.encounter_id,
+    status: combat.status,
+    round: combat.round,
+    turn_phase: combat.turn_phase,
+    started_by: combat.started_by,
+    player_units: combat.player_units,
+    enemy_units: combat.enemy_units
+  };
+}
+
+function broadcastCombatState(combatId) {
+  const combat = combatInstances.get(combatId);
+  if (!combat) return;
+
+  broadcastToParty(combat.party_id, {
+    type: "combat_state",
+    combat: sanitizeCombatState(combat)
+  });
+}
+
+async function createPartyCombatInstance(partyId, encounterId, tileId, startedBy) {
+  if (!partyId || !encounterId || !tileId || !startedBy) {
+    throw new Error("Missing combat creation parameters");
+  }
+
+  const { data: membersRows, error: membersError } = await supabase
+    .from("party_members")
+    .select("player_name")
+    .eq("party_id", partyId)
+    .order("joined_at", { ascending: true });
+
+  if (membersError) throw membersError;
+  if (!membersRows || membersRows.length === 0) {
+    throw new Error("Party has no members");
+  }
+
+  const playerUnits = [];
+  for (const row of membersRows) {
+    const unit = await buildPlayerCombatUnit(row.player_name);
+    playerUnits.push(unit);
+  }
+
+  const enemyUnits = buildEnemyCombatGroup(encounterId, tileId);
+  if (!enemyUnits || enemyUnits.length === 0) {
+    throw new Error("Encounter not found for tile");
+  }
+
+  const combatId = createCombatId();
+
+  const combatInstance = {
+    combat_id: combatId,
+    party_id: partyId,
+    tile_id: tileId,
+    encounter_id: encounterId,
+    status: "active",
+    round: 1,
+    turn_phase: "players",
+    started_by: startedBy,
+    player_units: playerUnits,
+    enemy_units: enemyUnits,
+    created_at: new Date().toISOString()
+  };
+
+  combatInstances.set(combatId, combatInstance);
+
+  for (const unit of playerUnits) {
+    playerCombatIndex.set(unit.player_name, combatId);
+  }
+
+  return combatInstance;
+}
+
+function findCombatByPlayer(playerName) {
+  const combatId = playerCombatIndex.get(playerName);
+  if (!combatId) return null;
+
+  return combatInstances.get(combatId) || null;
+}
 
 app.post("/api/party/invite", async (req, res) => {
   try {
