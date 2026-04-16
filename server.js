@@ -285,6 +285,19 @@ wss.on("connection", (ws) => {
   return;
 }
 
+function destroyCombatInstance(combatId) {
+  const combat = combatInstances.get(combatId);
+  if (!combat) return;
+
+  for (const unit of combat.player_units) {
+    if (unit.player_name) {
+      playerCombatIndex.delete(unit.player_name);
+    }
+  }
+
+  combatInstances.delete(combatId);
+}
+
     // ❌ UNKNOWN TYPE (SIEMPRE AL FINAL)
     sendWs(ws, { type: "error", message: "Unknown type" });
 
