@@ -510,3 +510,40 @@ app.get("/api/party/chat/messages", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+app.post("/api/party/chat/clear", async (req, res) => {
+  try {
+    const { player } = req.body || {};
+
+    console.log("CHAT CLEAR REQUEST BODY ->", req.body);
+
+    if (!player) {
+      return res.status(400).json({ error: "Missing player" });
+    }
+
+    const party = await findPartyByPlayer(player);
+
+    if (!party) {
+      return res.status(400).json({ error: "Player is not in a party" });
+    }
+
+    const { error } = await supabase
+      .from("party_messages")
+      .delete()
+      .eq("party_id", party.party_id);
+
+    if (error) {
+      throw error;
+    }
+
+    console.log("CHAT CLEAR OK ->", {
+      player,
+      party_id: party.party_id
+    });
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error("CHAT CLEAR ERROR:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
