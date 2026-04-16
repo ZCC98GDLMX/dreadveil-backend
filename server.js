@@ -4,6 +4,8 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
+const http = require("http");
+const WebSocket = require("ws");
 const { createClient } = require("@supabase/supabase-js");
 
 const app = express();
@@ -11,12 +13,154 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server, path: "/ws" });
+
 const PORT = process.env.PORT || 3000;
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SECRET_KEY
 );
+
+//////////////////////////////////////////////////////////////////
+// 🔥 WEBSOCKET SYSTEM (PEGAR AQUÍ)
+//////////////////////////////////////////////////////////////////
+
+const wsClients = new Map();
+// ws -> { player_name, party_id }
+
+const partyRooms = new Map();
+// party_id -> Set<ws>
+
+function sendWs(ws, payload) {
+  if (ws.readyState === 1) {
+    ws.send(JSON.stringify(payload));
+  }
+}
+
+function leavePartyRoom(ws) {
+  const client = wsClients.get(ws);
+  if (!client || !client.party_id) return;
+
+  const room = partyRooms.get(client.party_id);
+  if (room) {
+    room.delete(ws);
+    if (room.size === 0) {
+      partyRooms.delete(client.party_id);
+    }
+  }
+
+  client.party_id = null;
+}
+
+function joinPartyRoom(ws, partyId) {
+  leavePartyRoom(ws);
+
+  if (!partyRooms.has(partyId)) {
+    partyRooms.set(partyId, new Set());
+  }
+
+  partyRooms.get(partyId).add(ws);
+
+  const client = wsClients.get(ws) || {};
+  client.party_id = partyId;
+  wsClients.set(ws, client);
+}
+
+function broadcastToParty(partyId, payload) {
+  const room = partyRooms.get(partyId);
+  if (!room) return;
+
+  for (const ws of room) {
+    sendWs(ws, payload);
+  }
+}
+
+wss.on("connection", (ws) => {
+  console.log("WS CONNECTED");
+
+  wsClients.set(ws, {
+    player_name: null,
+    party_id: null
+  });
+
+  sendWs(ws, {
+    type: "connected"
+  });
+
+  ws.on("message", async (rawMessage) => {
+    try {
+      const text = rawMessage.toString();
+      console.log("WS MESSAGE ->", text);
+
+      const data = JSON.parse(text);
+      const type = data.type;
+      const client = wsClients.get(ws);
+
+      if (!type) {
+        sendWs(ws, { type: "error", message: "Missing type" });
+        return;
+      }
+
+      if (type === "identify") {
+        const playerName = String(data.player_name || "").trim();
+
+        if (!playerName) {
+          sendWs(ws, { type: "error", message: "Missing player_name" });
+          return;
+        }
+
+        client.player_name = playerName;
+        wsClients.set(ws, client);
+
+        const party = await findPartyByPlayer(playerName);
+        if (party && party.party_id) {
+          joinPartyRoom(ws, party.party_id);
+        }
+
+        sendWs(ws, {
+          type: "identified",
+          player_name: playerName,
+          party_id: party ? party.party_id : null
+        });
+
+        return;
+      }
+
+      if (type === "leave_party_room") {
+        leavePartyRoom(ws);
+        sendWs(ws, { type: "left_party_room" });
+        return;
+      }
+
+      if (type === "ping") {
+        sendWs(ws, { type: "pong" });
+        return;
+      }
+
+      sendWs(ws, { type: "error", message: "Unknown type" });
+    } catch (err) {
+      console.error("WS MESSAGE ERROR:", err);
+      sendWs(ws, { type: "error", message: "Invalid message format" });
+    }
+  });
+
+  ws.on("close", () => {
+    console.log("WS CLOSED");
+    leavePartyRoom(ws);
+    wsClients.delete(ws);
+  });
+
+  ws.on("error", (err) => {
+    console.error("WS SOCKET ERROR:", err);
+  });
+});
+
+//////////////////////////////////////////////////////////////////
+// 🔥 CONTINÚA TU CÓDIGO NORMAL
+//////////////////////////////////////////////////////////////////
+
 
 async function findPartyByPlayer(player) {
   const { data: memberRows, error: memberError } = await supabase
@@ -432,10 +576,6 @@ app.post("/api/party/transfer-leader", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log("Server running on port " + PORT);
-});
-
 app.post("/api/party/chat/send", async (req, res) => {
   const { player, message } = req.body || {};
 
@@ -452,26 +592,42 @@ app.post("/api/party/chat/send", async (req, res) => {
       return res.status(400).json({ error: "Player is not in a party" });
     }
 
-    const { error } = await supabase
+    const cleanMessage = String(message).trim();
+
+    if (!cleanMessage) {
+      return res.status(400).json({ error: "Message is empty" });
+    }
+
+    const { data: insertedMessage, error } = await supabase
       .from("party_messages")
       .insert({
         party_id: party.party_id,
         player_name: player,
-        message_text: message
-      });
+        message_text: cleanMessage
+      })
+      .select("*")
+      .single();
 
     if (error) {
       console.error("CHAT SEND ERROR ->", error);
       return res.status(500).json({ error: "Failed to send message" });
     }
 
-    console.log("CHAT SEND OK ->", { player, message });
+    console.log("CHAT SEND OK ->", insertedMessage);
 
-    res.json({ success: true });
+    broadcastToParty(party.party_id, {
+      type: "party_chat_message",
+      message: insertedMessage
+    });
+
+    return res.json({
+      success: true,
+      message: insertedMessage
+    });
 
   } catch (err) {
     console.error("CHAT SEND EXCEPTION ->", err);
-    res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -528,7 +684,7 @@ app.post("/api/party/chat/clear", async (req, res) => {
     }
 
     if (party.leader_name !== player) {
-     return res.status(400).json({ error: "Only the leader can clear chat" });
+      return res.status(400).json({ error: "Only the leader can clear chat" });
     }
 
     const { error } = await supabase
@@ -545,9 +701,20 @@ app.post("/api/party/chat/clear", async (req, res) => {
       party_id: party.party_id
     });
 
+    broadcastToParty(party.party_id, {
+      type: "party_chat_cleared",
+      party_id: party.party_id,
+      cleared_by: player
+    });
+
     return res.json({ success: true });
   } catch (error) {
     console.error("CHAT CLEAR ERROR:", error);
     return res.status(500).json({ error: "Internal server error" });
   }
+});
+
+server.listen(PORT, () => {
+  console.log("Server running on port " + PORT);
+  console.log("WebSocket server ready on /ws");
 });
