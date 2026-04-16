@@ -298,6 +298,55 @@ function destroyCombatInstance(combatId) {
   combatInstances.delete(combatId);
 }
 
+if (type === "combat_action") {
+  const playerName = String(data.player_name || "").trim();
+  const targetId = String(data.target_id || "").trim();
+
+  console.log("COMBAT ACTION REQUEST ->", {
+    playerName,
+    targetId
+  });
+
+  if (!playerName || !targetId) {
+    sendWs(ws, { type: "error", message: "Missing combat_action fields" });
+    return;
+  }
+
+  const combat = findCombatByPlayer(playerName);
+  if (!combat) {
+    sendWs(ws, { type: "combat_not_found" });
+    return;
+  }
+
+  const actionResponse = processPlayerCombatAction(combat, playerName, targetId);
+
+  if (!actionResponse.ok) {
+    sendWs(ws, {
+      type: "combat_action_error",
+      message: actionResponse.error
+    });
+    return;
+  }
+
+  broadcastToParty(combat.party_id, {
+    type: "combat_action_result",
+    combat_id: combat.combat_id,
+    result: actionResponse.result
+  });
+
+  broadcastCombatState(combat.combat_id);
+
+  if (combat.status === "players_win") {
+    broadcastToParty(combat.party_id, {
+      type: "combat_finished",
+      combat_id: combat.combat_id,
+      result: "players_win"
+    });
+  }
+
+  return;
+}
+
     // ❌ UNKNOWN TYPE (SIEMPRE AL FINAL)
     sendWs(ws, { type: "error", message: "Unknown type" });
 
@@ -629,6 +678,97 @@ function findCombatByPlayer(playerName) {
   if (!combatId) return null;
 
   return combatInstances.get(combatId) || null;
+}
+
+function findUnitById(units, unitId) {
+  if (!Array.isArray(units)) return null;
+
+  for (const unit of units) {
+    if (unit && unit.unit_id === unitId) {
+      return unit;
+    }
+  }
+
+  return null;
+}
+
+function computeBasicDamage(attacker, defender) {
+  const attackerDamage = Number(attacker.damage_bonus || 0);
+  const defenderDefense = Number(defender.defense_bonus || 0);
+  const defenderArmorPen = Number(defender.armor_penetration || 0);
+
+  const effectiveDefense = Math.max(defenderDefense - defenderArmorPen, 0);
+
+  const rawDamage = 20 + attackerDamage;
+  const finalDamage = Math.max(rawDamage - effectiveDefense, 1);
+
+  return finalDamage;
+}
+
+function isTeamDefeated(units) {
+  if (!Array.isArray(units) || units.length === 0) return true;
+
+  return units.every((unit) => Number(unit.hp || 0) <= 0 || unit.is_alive === false);
+}
+
+function processPlayerCombatAction(combat, playerName, targetId) {
+  if (!combat) {
+    return { ok: false, error: "Combat not found" };
+  }
+
+  if (combat.status !== "active") {
+    return { ok: false, error: "Combat is not active" };
+  }
+
+  if (combat.turn_phase !== "players") {
+    return { ok: false, error: "It is not the player phase" };
+  }
+
+  const attacker = combat.player_units.find(
+    (unit) => unit.player_name === playerName
+  );
+
+  if (!attacker) {
+    return { ok: false, error: "Attacker not found in player team" };
+  }
+
+  if (!attacker.is_alive || Number(attacker.hp || 0) <= 0) {
+    return { ok: false, error: "Attacker is dead" };
+  }
+
+  const target = findUnitById(combat.enemy_units, targetId);
+  if (!target) {
+    return { ok: false, error: "Target not found" };
+  }
+
+  if (!target.is_alive || Number(target.hp || 0) <= 0) {
+    return { ok: false, error: "Target is already dead" };
+  }
+
+  const damage = computeBasicDamage(attacker, target);
+
+  target.hp = Math.max(Number(target.hp || 0) - damage, 0);
+  target.is_alive = target.hp > 0;
+
+  const actionResult = {
+    type: "attack",
+    actor_id: attacker.unit_id,
+    actor_name: attacker.display_name,
+    target_id: target.unit_id,
+    target_name: target.display_name,
+    damage: damage,
+    target_hp_after: target.hp,
+    target_alive: target.is_alive
+  };
+
+  if (isTeamDefeated(combat.enemy_units)) {
+    combat.status = "players_win";
+  }
+
+  return {
+    ok: true,
+    result: actionResult
+  };
 }
 
 app.post("/api/party/invite", async (req, res) => {
