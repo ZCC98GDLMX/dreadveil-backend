@@ -527,6 +527,10 @@ app.post("/api/party/chat/clear", async (req, res) => {
       return res.status(400).json({ error: "Player is not in a party" });
     }
 
+    if (party.leader_name !== player) {
+     return res.status(400).json({ error: "Only the leader can clear chat" });
+    }
+
     const { error } = await supabase
       .from("party_messages")
       .delete()
