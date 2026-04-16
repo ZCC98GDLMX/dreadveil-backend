@@ -39,6 +39,9 @@ const combatInstances = new Map();
 const playerCombatIndex = new Map();
 // player_name -> combat_id
 
+const COMBAT_ROUND_INTERVAL_MS = 1800;
+const COMBAT_FINISH_CLEANUP_MS = 8000;
+
 function sendWs(ws, payload) {
   if (ws.readyState === 1) {
     ws.send(JSON.stringify(payload));
@@ -129,244 +132,173 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("message", async (rawMessage) => {
-  try {
-    const text = rawMessage.toString();
-    console.log("WS MESSAGE ->", text);
+    try {
+      const text = rawMessage.toString();
+      console.log("WS MESSAGE ->", text);
 
-    const data = JSON.parse(text);
-    const type = data.type;
-    const client = wsClients.get(ws);
+      const data = JSON.parse(text);
+      const type = data.type;
+      const client = wsClients.get(ws);
 
-    if (!type) {
-      sendWs(ws, { type: "error", message: "Missing type" });
-      return;
-    }
-
-    // IDENTIFY
-    if (type === "identify") {
-      const playerName = String(data.player_name || "").trim();
-
-      if (!playerName) {
-        sendWs(ws, { type: "error", message: "Missing player_name" });
+      if (!type) {
+        sendWs(ws, { type: "error", message: "Missing type" });
         return;
       }
 
-      client.player_name = playerName;
-      wsClients.set(ws, client);
+      // IDENTIFY
+      if (type === "identify") {
+        const playerName = String(data.player_name || "").trim();
 
-      const party = await findPartyByPlayer(playerName);
-      if (party && party.party_id) {
-        joinPartyRoom(ws, party.party_id);
-      }
-
-      sendWs(ws, {
-        type: "identified",
-        player_name: playerName,
-        party_id: party ? party.party_id : null
-      });
-
-      return;
-    }
-
-    // LEAVE ROOM
-    if (type === "leave_party_room") {
-      leavePartyRoom(ws);
-      sendWs(ws, { type: "left_party_room" });
-      return;
-    }
-
-    // PING
-    if (type === "ping") {
-      sendWs(ws, { type: "pong" });
-      return;
-    }
-
-    // 🔥 PARTY TYPING (NUEVO)
-    if (type === "party_typing") {
-      const playerName = String(data.player_name || "").trim();
-      const isTyping = Boolean(data.is_typing);
-
-      console.log("TYPING EVENT ->", playerName, isTyping);
-
-      if (!playerName) {
-        sendWs(ws, { type: "error", message: "Missing player_name" });
-        return;
-      }
-
-      const party = await findPartyByPlayer(playerName);
-      if (!party || !party.party_id) {
-        return;
-      }
-
-      const room = partyRooms.get(party.party_id);
-      if (!room) return;
-
-      for (const otherWs of room) {
-        if (otherWs !== ws) {
-          sendWs(otherWs, {
-            type: "party_typing",
-            player_name: playerName,
-            is_typing: isTyping
-          });
+        if (!playerName) {
+          sendWs(ws, { type: "error", message: "Missing player_name" });
+          return;
         }
+
+        client.player_name = playerName;
+        wsClients.set(ws, client);
+
+        const party = await findPartyByPlayer(playerName);
+        if (party && party.party_id) {
+          joinPartyRoom(ws, party.party_id);
+        }
+
+        sendWs(ws, {
+          type: "identified",
+          player_name: playerName,
+          party_id: party ? party.party_id : null
+        });
+
+        return;
       }
 
-      return;
-    }
+      // LEAVE ROOM
+      if (type === "leave_party_room") {
+        leavePartyRoom(ws);
+        sendWs(ws, { type: "left_party_room" });
+        return;
+      }
 
+      // PING
+      if (type === "ping") {
+        sendWs(ws, { type: "pong" });
+        return;
+      }
+
+      // PARTY TYPING
+      if (type === "party_typing") {
+        const playerName = String(data.player_name || "").trim();
+        const isTyping = Boolean(data.is_typing);
+
+        console.log("TYPING EVENT ->", playerName, isTyping);
+
+        if (!playerName) {
+          sendWs(ws, { type: "error", message: "Missing player_name" });
+          return;
+        }
+
+        const party = await findPartyByPlayer(playerName);
+        if (!party || !party.party_id) {
+          return;
+        }
+
+        const room = partyRooms.get(party.party_id);
+        if (!room) return;
+
+        for (const otherWs of room) {
+          if (otherWs !== ws) {
+            sendWs(otherWs, {
+              type: "party_typing",
+              player_name: playerName,
+              is_typing: isTyping
+            });
+          }
+        }
+
+        return;
+      }
+
+      // COMBAT CREATE REQUEST
       if (type === "combat_create_request") {
         const playerName = String(data.player_name || "").trim();
         const encounterId = String(data.encounter_id || "").trim();
         const tileId = String(data.tile_id || "").trim();
 
         console.log("COMBAT CREATE REQUEST ->", {
-         playerName,
-         encounterId,
-         tileId
-         });
+          playerName,
+          encounterId,
+          tileId
+        });
 
-         if (!playerName || !encounterId || !tileId) {
-            sendWs(ws, { type: "error", message: "Missing combat_create_request fields" });
-            return;
-         }
+        if (!playerName || !encounterId || !tileId) {
+          sendWs(ws, { type: "error", message: "Missing combat_create_request fields" });
+          return;
+        }
 
-          const party = await findPartyByPlayer(playerName);
-          if (!party || !party.party_id) {
-           sendWs(ws, { type: "error", message: "Player is not in a party" });
-           return;
-          }
+        const party = await findPartyByPlayer(playerName);
+        if (!party || !party.party_id) {
+          sendWs(ws, { type: "error", message: "Player is not in a party" });
+          return;
+        }
 
-         const existingCombat = findCombatByPlayer(playerName);
-          if (existingCombat) {
-           sendWs(ws, {
-             type: "combat_state",
-              combat: sanitizeCombatState(existingCombat)
-             });
-             return;
-          }
+        const existingCombat = findCombatByPlayer(playerName);
+        if (existingCombat) {
+          sendWs(ws, {
+            type: "combat_state",
+            combat: sanitizeCombatState(existingCombat)
+          });
+          return;
+        }
 
-          const combat = await createPartyCombatInstance(
-           party.party_id,
-           encounterId,
-            tileId,
+        const combat = await createPartyCombatInstance(
+          party.party_id,
+          encounterId,
+          tileId,
           playerName
-         );
+        );
 
         broadcastToParty(party.party_id, {
-           type: "combat_created",
-            combat_id: combat.combat_id,
-           party_id: party.party_id,
-           encounter_id: encounterId,
-            tile_id: tileId
-         });
+          type: "combat_created",
+          combat_id: combat.combat_id,
+          party_id: party.party_id,
+          encounter_id: encounterId,
+          tile_id: tileId
+        });
 
-         broadcastCombatState(combat.combat_id);
-         return;
+        broadcastCombatState(combat.combat_id);
+        startCombatLoop(combat.combat_id);
+        return;
       }
 
-    if (type === "combat_state_request") {
-  const playerName = String(data.player_name || "").trim();
+      // COMBAT STATE REQUEST
+      if (type === "combat_state_request") {
+        const playerName = String(data.player_name || "").trim();
 
-  if (!playerName) {
-    sendWs(ws, { type: "error", message: "Missing player_name" });
-    return;
-  }
+        if (!playerName) {
+          sendWs(ws, { type: "error", message: "Missing player_name" });
+          return;
+        }
 
-  const combat = findCombatByPlayer(playerName);
-  if (!combat) {
-    sendWs(ws, { type: "combat_not_found" });
-    return;
-  }
+        const combat = findCombatByPlayer(playerName);
+        if (!combat) {
+          sendWs(ws, { type: "combat_not_found" });
+          return;
+        }
 
-  sendWs(ws, {
-    type: "combat_state",
-    combat: sanitizeCombatState(combat)
-  });
-  return;
-}
+        sendWs(ws, {
+          type: "combat_state",
+          combat: sanitizeCombatState(combat)
+        });
+        return;
+      }
 
-function destroyCombatInstance(combatId) {
-  const combat = combatInstances.get(combatId);
-  if (!combat) return;
+      // UNKNOWN TYPE
+      sendWs(ws, { type: "error", message: "Unknown type" });
 
-  for (const unit of combat.player_units) {
-    if (unit.player_name) {
-      playerCombatIndex.delete(unit.player_name);
+    } catch (err) {
+      console.error("WS MESSAGE ERROR:", err);
+      sendWs(ws, { type: "error", message: "Invalid message format" });
     }
-  }
-
-  combatInstances.delete(combatId);
-}
-
-if (type === "combat_submit_turn") {
-  const playerName = String(data.player_name || "").trim();
-
-  console.log("COMBAT SUBMIT TURN ->", {
-    playerName
   });
-
-  if (!playerName) {
-    sendWs(ws, { type: "error", message: "Missing combat_submit_turn fields" });
-    return;
-  }
-
-  const combat = findCombatByPlayer(playerName);
-  if (!combat) {
-    sendWs(ws, { type: "combat_not_found" });
-    return;
-  }
-
-  const registerResult = registerPlayerTurnAction(combat, playerName);
-
-  if (!registerResult.ok) {
-    sendWs(ws, {
-      type: "combat_action_error",
-      message: registerResult.error
-    });
-    return;
-  }
-
-  broadcastToParty(combat.party_id, {
-    type: "combat_turn_submitted",
-    combat_id: combat.combat_id,
-    player_name: playerName
-  });
-
-  if (haveAllAlivePlayersSubmitted(combat)) {
-    const phaseResults = resolvePlayersPhase(combat);
-
-    for (const result of phaseResults) {
-      broadcastToParty(combat.party_id, {
-        type: "combat_action_result",
-        combat_id: combat.combat_id,
-        result: result
-      });
-    }
-
-    broadcastCombatState(combat.combat_id);
-
-    if (combat.status === "players_win") {
-      broadcastToParty(combat.party_id, {
-        type: "combat_finished",
-        combat_id: combat.combat_id,
-        result: "players_win"
-      });
-    }
-  } else {
-    broadcastCombatState(combat.combat_id);
-  }
-
-  return;
-}
-
-    // ❌ UNKNOWN TYPE (SIEMPRE AL FINAL)
-    sendWs(ws, { type: "error", message: "Unknown type" });
-
-  } catch (err) {
-    console.error("WS MESSAGE ERROR:", err);
-    sendWs(ws, { type: "error", message: "Invalid message format" });
-  }
-});
 
   ws.on("close", () => {
     console.log("WS CLOSED");
@@ -474,10 +406,6 @@ app.get("/api/party/state", async (req, res) => {
 });
 
 async function buildPlayerCombatUnit(playerName) {
-  // Fase 1:
-  // usamos valores base estables para crear unidades reales del party
-  // más adelante esto se conectará a stats/equipo reales guardados
-
   return {
     unit_id: "player_" + playerName,
     unit_type: "player",
@@ -492,13 +420,18 @@ async function buildPlayerCombatUnit(playerName) {
     damage_bonus: 10,
     defense_bonus: 5,
     armor_penetration: 0,
+    lifesteal: 0,
 
-    skill_sequence: ["Slash"],
+    attack_sequence: ["Slash"],
     target_strategy: "first_alive",
-
-    cooldowns: {},
+    skill_cooldowns: {},
     sequence_index: 0,
 
+    block_active: false,
+    intercept_active: false,
+    guard_stance_turns: 0,
+
+    last_skill_used: "",
     is_alive: true
   };
 }
@@ -518,10 +451,15 @@ function buildEnemyCombatGroup(encounterId, tileId) {
           damage_bonus: 26,
           defense_bonus: 26,
           armor_penetration: 6,
-          skill_sequence: ["Slash"],
+          lifesteal: 0,
+          attack_sequence: ["Slash"],
           target_strategy: "first_alive",
-          cooldowns: {},
+          skill_cooldowns: {},
           sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
           is_alive: true
         },
         {
@@ -535,10 +473,15 @@ function buildEnemyCombatGroup(encounterId, tileId) {
           damage_bonus: 26,
           defense_bonus: 26,
           armor_penetration: 6,
-          skill_sequence: ["Slash"],
+          lifesteal: 0,
+          attack_sequence: ["Slash"],
           target_strategy: "first_alive",
-          cooldowns: {},
+          skill_cooldowns: {},
           sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
           is_alive: true
         },
         {
@@ -552,10 +495,15 @@ function buildEnemyCombatGroup(encounterId, tileId) {
           damage_bonus: 24,
           defense_bonus: 24,
           armor_penetration: 5,
-          skill_sequence: ["Slash"],
+          lifesteal: 0,
+          attack_sequence: ["Slash"],
           target_strategy: "first_alive",
-          cooldowns: {},
+          skill_cooldowns: {},
           sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
           is_alive: true
         }
       ],
@@ -572,10 +520,15 @@ function buildEnemyCombatGroup(encounterId, tileId) {
           damage_bonus: 34,
           defense_bonus: 18,
           armor_penetration: 11,
-          skill_sequence: ["Slash"],
+          lifesteal: 0,
+          attack_sequence: ["Slash"],
           target_strategy: "lowest_hp",
-          cooldowns: {},
+          skill_cooldowns: {},
           sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
           is_alive: true
         },
         {
@@ -589,10 +542,15 @@ function buildEnemyCombatGroup(encounterId, tileId) {
           damage_bonus: 34,
           defense_bonus: 18,
           armor_penetration: 11,
-          skill_sequence: ["Slash"],
+          lifesteal: 0,
+          attack_sequence: ["Slash"],
           target_strategy: "lowest_hp",
-          cooldowns: {},
+          skill_cooldowns: {},
           sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
           is_alive: true
         }
       ]
@@ -663,20 +621,21 @@ async function createPartyCombatInstance(partyId, encounterId, tileId, startedBy
   const combatId = createCombatId();
 
   const combatInstance = {
-  combat_id: combatId,
-  party_id: partyId,
-  tile_id: tileId,
-  encounter_id: encounterId,
-  status: "active",
-  round: 1,
-  turn_phase: "players",
-  started_by: startedBy,
-  player_units: playerUnits,
-  enemy_units: enemyUnits,
-  pending_player_actions: {},
-  resolved_actions_log: [],
-  created_at: new Date().toISOString()
-};
+    combat_id: combatId,
+    party_id: partyId,
+    tile_id: tileId,
+    encounter_id: encounterId,
+    status: "active",
+    round: 0,
+    turn_phase: "players",
+    started_by: startedBy,
+    player_units: playerUnits,
+    enemy_units: enemyUnits,
+    resolved_actions_log: [],
+    auto_loop_started: false,
+    round_timer: null,
+    created_at: new Date().toISOString()
+  };
 
   combatInstances.set(combatId, combatInstance);
 
@@ -694,229 +653,411 @@ function findCombatByPlayer(playerName) {
   return combatInstances.get(combatId) || null;
 }
 
-function findUnitById(units, unitId) {
-  if (!Array.isArray(units)) return null;
-
-  for (const unit of units) {
-    if (unit && unit.unit_id === unitId) {
-      return unit;
-    }
-  }
-
-  return null;
+function isUnitAlive(unit) {
+  return Number(unit?.hp || 0) > 0;
 }
 
-function computeBasicDamage(attacker, defender) {
-  const attackerDamage = Number(attacker.damage_bonus || 0);
-  const defenderDefense = Number(defender.defense_bonus || 0);
-  const defenderArmorPen = Number(defender.armor_penetration || 0);
-
-  const effectiveDefense = Math.max(defenderDefense - defenderArmorPen, 0);
-
-  const rawDamage = 20 + attackerDamage;
-  const finalDamage = Math.max(rawDamage - effectiveDefense, 1);
-
-  return finalDamage;
+function countAliveUnits(units) {
+  return (units || []).filter(isUnitAlive).length;
 }
 
 function isTeamDefeated(units) {
-  if (!Array.isArray(units) || units.length === 0) return true;
-
-  return units.every((unit) => Number(unit.hp || 0) <= 0 || unit.is_alive === false);
+  return countAliveUnits(units) === 0;
 }
 
-function getAlivePlayerUnits(units) {
-  if (!Array.isArray(units)) return [];
-  return units.filter((unit) => unit.is_alive && Number(unit.hp || 0) > 0);
-}
-
-function getNextSkillNameFromSequence(unit) {
-  const sequence = Array.isArray(unit.skill_sequence) ? unit.skill_sequence : [];
+function getNextSkillName(unit) {
+  const sequence = Array.isArray(unit.attack_sequence) ? unit.attack_sequence : [];
   if (sequence.length === 0) return "Slash";
 
-  const sequenceIndex = Number(unit.sequence_index || 0);
-  const safeIndex = ((sequenceIndex % sequence.length) + sequence.length) % sequence.length;
+  const index = Number(unit.sequence_index || 0);
+  const wrappedIndex = ((index % sequence.length) + sequence.length) % sequence.length;
 
-  return String(sequence[safeIndex] || "Slash");
+  return String(sequence[wrappedIndex] || "Slash");
 }
 
-function getFirstAliveEnemy(units) {
-  if (!Array.isArray(units)) return null;
-
+function reducePartyCooldowns(units) {
   for (const unit of units) {
-    if (unit && unit.is_alive && Number(unit.hp || 0) > 0) {
-      return unit;
+    const cooldowns = unit.skill_cooldowns || {};
+    for (const skillName of Object.keys(cooldowns)) {
+      if (Number(cooldowns[skillName]) > 0) {
+        cooldowns[skillName] = Number(cooldowns[skillName]) - 1;
+      }
     }
+    unit.skill_cooldowns = cooldowns;
   }
-
-  return null;
 }
 
-function registerPlayerTurnAction(combat, playerName) {
-  if (!combat) {
-    return { ok: false, error: "Combat not found" };
+function reduceGuardStanceTurns(units) {
+  for (const unit of units) {
+    const turns = Number(unit.guard_stance_turns || 0);
+    unit.guard_stance_turns = Math.max(turns - 1, 0);
   }
+}
 
-  if (combat.status !== "active") {
-    return { ok: false, error: "Combat is not active" };
-  }
-
-  if (combat.turn_phase !== "players") {
-    return { ok: false, error: "It is not the player phase" };
-  }
-
-  const unit = combat.player_units.find((u) => u.player_name === playerName);
-  if (!unit) {
-    return { ok: false, error: "Player unit not found" };
-  }
-
-  if (!unit.is_alive || Number(unit.hp || 0) <= 0) {
-    return { ok: false, error: "Player unit is dead" };
-  }
-
-  if (combat.pending_player_actions[playerName]) {
-    return { ok: false, error: "Player action already submitted this round" };
-  }
-
-  const skillName = getNextSkillNameFromSequence(unit);
-
-  combat.pending_player_actions[playerName] = {
-    player_name: playerName,
-    unit_id: unit.unit_id,
-    skill_name: skillName
+function getSkillData(skillName) {
+  const skills = {
+    Slash: {
+      name: "Slash",
+      type: "Offensive",
+      cost: 5,
+      damage: 5,
+      flat_bonus: 0,
+      multiplier: 1.0,
+      cooldown: 0
+    },
+    Block: {
+      name: "Block",
+      type: "Defensive",
+      cost: 5,
+      cooldown: 1
+    },
+    Intercept: {
+      name: "Intercept",
+      type: "Defensive",
+      cost: 5,
+      cooldown: 1
+    },
+    "Guard Stance": {
+      name: "Guard Stance",
+      type: "Defensive",
+      cost: 8,
+      cooldown: 2
+    }
   };
+
+  return skills[skillName] || skills["Slash"];
+}
+
+function resolveSkillForUse(unit, skillName) {
+  const cooldowns = unit.skill_cooldowns || {};
+  if (cooldowns[skillName] && Number(cooldowns[skillName]) > 0) {
+    return getSkillData("Slash");
+  }
+
+  return getSkillData(skillName);
+}
+
+function applySkillCooldown(unit, skillName, skillData) {
+  const cooldownValue = Number(skillData.cooldown || 0);
+  if (cooldownValue <= 0) return;
+
+  const cooldowns = unit.skill_cooldowns || {};
+  cooldowns[skillName] = cooldownValue;
+  unit.skill_cooldowns = cooldowns;
+}
+
+function findTargetIndex(units, strategy = "first_alive") {
+  const aliveIndexes = [];
+  for (let i = 0; i < units.length; i++) {
+    if (isUnitAlive(units[i])) aliveIndexes.push(i);
+  }
+
+  if (aliveIndexes.length === 0) return -1;
+
+  if (strategy === "lowest_hp") {
+    let bestIndex = aliveIndexes[0];
+    let bestHp = Number(units[bestIndex].hp || 0);
+
+    for (const idx of aliveIndexes) {
+      const hp = Number(units[idx].hp || 0);
+      if (hp < bestHp) {
+        bestHp = hp;
+        bestIndex = idx;
+      }
+    }
+    return bestIndex;
+  }
+
+  if (strategy === "highest_hp") {
+    let bestIndex = aliveIndexes[0];
+    let bestHp = Number(units[bestIndex].hp || 0);
+
+    for (const idx of aliveIndexes) {
+      const hp = Number(units[idx].hp || 0);
+      if (hp > bestHp) {
+        bestHp = hp;
+        bestIndex = idx;
+      }
+    }
+    return bestIndex;
+  }
+
+  if (strategy === "random") {
+    return aliveIndexes[Math.floor(Math.random() * aliveIndexes.length)];
+  }
+
+  return aliveIndexes[0];
+}
+
+function calculateDamageResult(attacker, defender, skillData) {
+  const attackerDamageBonus = Number(attacker.damage_bonus || 0);
+  const defenderDefenseBonus = Number(defender.defense_bonus || 0);
+  const armorPen = Number(attacker.armor_penetration || 0);
+
+  const skillFlatBonus = Number(skillData.flat_bonus || 0);
+  const skillBaseDamage = Number(skillData.damage || 0);
+  const skillMultiplier = Number(skillData.multiplier || 1.0);
+
+  let rawDamage = Math.floor((attackerDamageBonus + skillBaseDamage + skillFlatBonus) * skillMultiplier);
+  rawDamage = Math.max(rawDamage, 1);
+
+  const effectiveDefense = Math.max(defenderDefenseBonus - armorPen, 0);
+  const mitigationPercent = effectiveDefense / (effectiveDefense + 100.0);
+  let mitigatedDamage = Math.floor(rawDamage * (1.0 - mitigationPercent));
+  mitigatedDamage = Math.max(mitigatedDamage, 1);
+
+  return {
+    raw_damage: rawDamage,
+    effective_defense: effectiveDefense,
+    mitigation_percent: mitigationPercent,
+    mitigated_damage: mitigatedDamage
+  };
+}
+
+function applyDefensiveReduction(defender, incomingDamage) {
+  let result = incomingDamage;
+
+  if (defender.block_active) {
+    result = Math.floor(result * (1.0 - 0.55));
+    defender.block_active = false;
+  } else if (defender.intercept_active) {
+    result = Math.floor(result * (1.0 - 0.35));
+    defender.intercept_active = false;
+  } else if (Number(defender.guard_stance_turns || 0) > 0) {
+    result = Math.floor(result * (1.0 - 0.25));
+  }
+
+  return Math.max(result, 1);
+}
+
+function applyDefensiveSkill(unit, skillData) {
+  const skillName = String(skillData.name || "");
+
+  if (skillName === "Block") {
+    unit.block_active = true;
+    unit.intercept_active = false;
+    return "block";
+  }
+
+  if (skillName === "Intercept") {
+    unit.intercept_active = true;
+    unit.block_active = false;
+    return "intercept";
+  }
+
+  if (skillName === "Guard Stance") {
+    unit.guard_stance_turns = 2;
+    return "guard_stance";
+  }
+
+  return "none";
+}
+
+function performUnitAction(attackerParty, defenderParty, attackerIndex) {
+  const attacker = attackerParty[attackerIndex];
+  if (!attacker || !isUnitAlive(attacker)) return null;
+
+  let skillName = getNextSkillName(attacker);
+  let skillData = resolveSkillForUse(attacker, skillName);
+  let resolvedSkillName = String(skillData.name || "Slash");
+  let skillCost = Number(skillData.cost || 0);
+
+  if (Number(attacker.ap || 0) < skillCost) {
+    skillData = getSkillData("Slash");
+    resolvedSkillName = "Slash";
+    skillCost = Number(skillData.cost || 0);
+  }
+
+  if (Number(attacker.ap || 0) < skillCost) {
+    attacker.sequence_index = Number(attacker.sequence_index || 0) + 1;
+    return {
+      ok: true,
+      type: "skip",
+      attacker_name: attacker.display_name,
+      reason: "not_enough_ap"
+    };
+  }
+
+  attacker.ap = Math.max(Number(attacker.ap || 0) - skillCost, 0);
+
+  if (String(skillData.type || "Offensive") === "Defensive") {
+    const defensiveEffect = applyDefensiveSkill(attacker, skillData);
+    attacker.last_skill_used = resolvedSkillName;
+    attacker.sequence_index = Number(attacker.sequence_index || 0) + 1;
+    applySkillCooldown(attacker, resolvedSkillName, skillData);
+
+    return {
+      ok: true,
+      type: "defensive",
+      attacker_name: attacker.display_name,
+      skill_name: resolvedSkillName,
+      result: defensiveEffect
+    };
+  }
+
+  const targetIndex = findTargetIndex(defenderParty, attacker.target_strategy || "first_alive");
+  if (targetIndex === -1) {
+    attacker.last_skill_used = "";
+    attacker.sequence_index = Number(attacker.sequence_index || 0) + 1;
+    return null;
+  }
+
+  const defender = defenderParty[targetIndex];
+  const damageResult = calculateDamageResult(attacker, defender, skillData);
+  const finalDamage = applyDefensiveReduction(defender, Number(damageResult.mitigated_damage || 0));
+
+  defender.hp = Math.max(Number(defender.hp || 0) - finalDamage, 0);
+  defender.is_alive = defender.hp > 0;
+
+  const lifestealPercent = Number(attacker.lifesteal || 0);
+  if (lifestealPercent > 0 && finalDamage > 0) {
+    const healAmount = Math.floor(finalDamage * (lifestealPercent / 100.0));
+    attacker.hp = Math.min(Number(attacker.hp || 0) + healAmount, Number(attacker.max_hp || 0));
+  }
+
+  attacker.last_skill_used = resolvedSkillName;
+  attacker.sequence_index = Number(attacker.sequence_index || 0) + 1;
+  applySkillCooldown(attacker, resolvedSkillName, skillData);
 
   return {
     ok: true,
-    submitted_action: combat.pending_player_actions[playerName]
+    type: "offensive",
+    attacker_id: attacker.unit_id,
+    attacker_name: attacker.display_name,
+    skill_name: resolvedSkillName,
+    target_id: defender.unit_id,
+    target_name: defender.display_name,
+    damage: finalDamage,
+    target_hp_after: defender.hp,
+    target_alive: defender.is_alive
   };
 }
 
-function haveAllAlivePlayersSubmitted(combat) {
-  const alivePlayers = getAlivePlayerUnits(combat.player_units);
+function processCombatRound(combat) {
+  if (!combat || combat.status !== "active") return [];
 
-  for (const unit of alivePlayers) {
-    if (!combat.pending_player_actions[unit.player_name]) {
-      return false;
-    }
-  }
+  combat.round += 1;
+  combat.turn_phase = "players";
 
-  return true;
-}
+  reducePartyCooldowns(combat.player_units);
+  reducePartyCooldowns(combat.enemy_units);
+  reduceGuardStanceTurns(combat.player_units);
+  reduceGuardStanceTurns(combat.enemy_units);
 
-function resolvePlayersPhase(combat) {
-  const results = [];
+  const actions = [];
 
-  for (const playerUnit of combat.player_units) {
-    if (!playerUnit.is_alive || Number(playerUnit.hp || 0) <= 0) {
-      continue;
-    }
-
-    const submittedAction = combat.pending_player_actions[playerUnit.player_name];
-    if (!submittedAction) {
-      continue;
-    }
-
-    const target = getFirstAliveEnemy(combat.enemy_units);
-    if (!target) {
-      break;
-    }
-
-    const damage = computeBasicDamage(playerUnit, target);
-
-    target.hp = Math.max(Number(target.hp || 0) - damage, 0);
-    target.is_alive = target.hp > 0;
-
-    const usedSkill = submittedAction.skill_name || "Slash";
-
-    const result = {
-      type: "attack",
-      actor_id: playerUnit.unit_id,
-      actor_name: playerUnit.display_name,
-      skill_name: usedSkill,
-      target_id: target.unit_id,
-      target_name: target.display_name,
-      damage: damage,
-      target_hp_after: target.hp,
-      target_alive: target.is_alive
-    };
-
-    results.push(result);
-
-    playerUnit.sequence_index = Number(playerUnit.sequence_index || 0) + 1;
+  for (let i = 0; i < combat.player_units.length; i++) {
+    const result = performUnitAction(combat.player_units, combat.enemy_units, i);
+    if (result) actions.push(result);
 
     if (isTeamDefeated(combat.enemy_units)) {
       combat.status = "players_win";
-      break;
+      combat.resolved_actions_log = actions;
+      return actions;
     }
   }
 
-  combat.resolved_actions_log = results;
-  combat.pending_player_actions = {};
+  combat.turn_phase = "enemies";
 
-  return results;
+  for (let i = 0; i < combat.enemy_units.length; i++) {
+    const result = performUnitAction(combat.enemy_units, combat.player_units, i);
+    if (result) actions.push(result);
+
+    if (isTeamDefeated(combat.player_units)) {
+      combat.status = "enemies_win";
+      combat.resolved_actions_log = actions;
+      return actions;
+    }
+  }
+
+  if (combat.round >= 15) {
+    combat.status = "round_limit";
+  }
+
+  combat.turn_phase = "players";
+  combat.resolved_actions_log = actions;
+  return actions;
 }
 
-function processPlayerCombatAction(combat, playerName, targetId) {
-  if (!combat) {
-    return { ok: false, error: "Combat not found" };
+function destroyCombatInstance(combatId) {
+  const combat = combatInstances.get(combatId);
+  if (!combat) return;
+
+  if (combat.round_timer) {
+    clearTimeout(combat.round_timer);
+    combat.round_timer = null;
   }
 
-  if (combat.status !== "active") {
-    return { ok: false, error: "Combat is not active" };
+  for (const unit of combat.player_units) {
+    if (unit.player_name) {
+      playerCombatIndex.delete(unit.player_name);
+    }
   }
 
-  if (combat.turn_phase !== "players") {
-    return { ok: false, error: "It is not the player phase" };
-  }
-
-  const attacker = combat.player_units.find(
-    (unit) => unit.player_name === playerName
-  );
-
-  if (!attacker) {
-    return { ok: false, error: "Attacker not found in player team" };
-  }
-
-  if (!attacker.is_alive || Number(attacker.hp || 0) <= 0) {
-    return { ok: false, error: "Attacker is dead" };
-  }
-
-  const target = findUnitById(combat.enemy_units, targetId);
-  if (!target) {
-    return { ok: false, error: "Target not found" };
-  }
-
-  if (!target.is_alive || Number(target.hp || 0) <= 0) {
-    return { ok: false, error: "Target is already dead" };
-  }
-
-  const damage = computeBasicDamage(attacker, target);
-
-  target.hp = Math.max(Number(target.hp || 0) - damage, 0);
-  target.is_alive = target.hp > 0;
-
-  const actionResult = {
-    type: "attack",
-    actor_id: attacker.unit_id,
-    actor_name: attacker.display_name,
-    target_id: target.unit_id,
-    target_name: target.display_name,
-    damage: damage,
-    target_hp_after: target.hp,
-    target_alive: target.is_alive
-  };
-
-  if (isTeamDefeated(combat.enemy_units)) {
-    combat.status = "players_win";
-  }
-
-  return {
-    ok: true,
-    result: actionResult
-  };
+  combatInstances.delete(combatId);
 }
 
+function startCombatLoop(combatId) {
+  const combat = combatInstances.get(combatId);
+  if (!combat || combat.auto_loop_started) return;
+
+  combat.auto_loop_started = true;
+
+  const runRound = () => {
+    const currentCombat = combatInstances.get(combatId);
+    if (!currentCombat) return;
+
+    if (currentCombat.status !== "active") {
+      broadcastToParty(currentCombat.party_id, {
+        type: "combat_finished",
+        combat_id: currentCombat.combat_id,
+        result: currentCombat.status
+      });
+
+      setTimeout(() => {
+        destroyCombatInstance(currentCombat.combat_id);
+      }, COMBAT_FINISH_CLEANUP_MS);
+
+      return;
+    }
+
+    broadcastToParty(currentCombat.party_id, {
+      type: "combat_round_started",
+      combat_id: currentCombat.combat_id,
+      round: currentCombat.round + 1
+    });
+
+    const roundResults = processCombatRound(currentCombat);
+
+    for (const result of roundResults) {
+      broadcastToParty(currentCombat.party_id, {
+        type: "combat_action_result",
+        combat_id: currentCombat.combat_id,
+        result: result
+      });
+    }
+
+    broadcastCombatState(currentCombat.combat_id);
+
+    if (currentCombat.status !== "active") {
+      broadcastToParty(currentCombat.party_id, {
+        type: "combat_finished",
+        combat_id: currentCombat.combat_id,
+        result: currentCombat.status
+      });
+
+      setTimeout(() => {
+        destroyCombatInstance(currentCombat.combat_id);
+      }, COMBAT_FINISH_CLEANUP_MS);
+
+      return;
+    }
+
+    currentCombat.round_timer = setTimeout(runRound, COMBAT_ROUND_INTERVAL_MS);
+  };
+
+  combat.round_timer = setTimeout(runRound, 1200);
+}
 app.post("/api/party/invite", async (req, res) => {
   try {
     const { from, to } = req.body || {};
