@@ -77,6 +77,15 @@ function broadcastToParty(partyId, payload) {
   }
 }
 
+function broadcastPartyStateChanged(partyId) {
+  if (!partyId) return;
+
+  broadcastToParty(partyId, {
+    type: "party_state_changed",
+    party_id: partyId
+  });
+}
+
 wss.on("connection", (ws) => {
   console.log("WS CONNECTED");
 
@@ -329,6 +338,8 @@ app.post("/api/party/invite", async (req, res) => {
 
     console.log("INVITE OK ->", { from, to, party_id: fromParty.party_id });
 
+    broadcastPartyStateChanged(fromParty.party_id);
+
     return res.json({ success: true });
   } catch (error) {
     console.error("INVITE ERROR:", error);
@@ -427,6 +438,8 @@ app.post("/api/party/accept", async (req, res) => {
     if (updateInviteError) throw updateInviteError;
 
     console.log("ACCEPT OK ->", { from, to, party_id: leaderParty.party_id });
+
+    broadcastPartyStateChanged(leaderParty.party_id);
 
     return res.json({ success: true });
   } catch (error) {
