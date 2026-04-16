@@ -86,6 +86,19 @@ function broadcastPartyStateChanged(partyId) {
   });
 }
 
+function broadcastPartySystemMessage(partyId, messageText) {
+  if (!partyId || !messageText) return;
+
+  broadcastToParty(partyId, {
+    type: "party_system_message",
+    message: {
+      party_id: partyId,
+      message_text: messageText,
+      created_at: new Date().toISOString()
+    }
+  });
+}
+
 wss.on("connection", (ws) => {
   console.log("WS CONNECTED");
 
@@ -440,8 +453,13 @@ app.post("/api/party/accept", async (req, res) => {
     console.log("ACCEPT OK ->", { from, to, party_id: leaderParty.party_id });
 
     broadcastPartyStateChanged(leaderParty.party_id);
+    broadcastPartySystemMessage(
+      leaderParty.party_id,
+      "🟢 " + player + " joined the party"
+    );
 
     return res.json({ success: true });
+
   } catch (error) {
     console.error("ACCEPT ERROR:", error);
     return res.status(500).json({
@@ -536,9 +554,18 @@ app.post("/api/party/leave", async (req, res) => {
         .eq("party_id", party.party_id);
 
       if (updateLeaderError) throw updateLeaderError;
+
+      broadcastPartySystemMessage(
+        party.party_id,
+        "👑 " + newLeader + " is now the leader"
+      );
     }
 
     broadcastPartyStateChanged(party.party_id);
+    broadcastPartySystemMessage(
+      party.party_id,
+      "🔴 " + player + " left the party"
+    );
 
     return res.json({ success: true });
   } catch (error) {
@@ -587,6 +614,10 @@ app.post("/api/party/transfer-leader", async (req, res) => {
     console.log("TRANSFER LEADER OK ->", { player, new_leader });
 
     broadcastPartyStateChanged(party.party_id);
+    broadcastPartySystemMessage(
+      party.party_id,
+      "👑 " + new_leader + " is now the leader"
+    );
 
     return res.json({ success: true });
   } catch (error) {
