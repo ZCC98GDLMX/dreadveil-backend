@@ -473,6 +473,11 @@ app.post("/api/party/reject", async (req, res) => {
 
     if (error) throw error;
 
+    const inviterParty = await findPartyByPlayer(from);
+    if (inviterParty && inviterParty.party_id) {
+      broadcastPartyStateChanged(inviterParty.party_id);
+    }
+
     return res.json({ success: true });
   } catch (error) {
     console.error("REJECT ERROR:", error);
@@ -533,6 +538,8 @@ app.post("/api/party/leave", async (req, res) => {
       if (updateLeaderError) throw updateLeaderError;
     }
 
+    broadcastPartyStateChanged(party.party_id);
+
     return res.json({ success: true });
   } catch (error) {
     console.error("LEAVE ERROR:", error);
@@ -578,6 +585,8 @@ app.post("/api/party/transfer-leader", async (req, res) => {
     if (error) throw error;
 
     console.log("TRANSFER LEADER OK ->", { player, new_leader });
+
+    broadcastPartyStateChanged(party.party_id);
 
     return res.json({ success: true });
   } catch (error) {
