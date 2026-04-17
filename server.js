@@ -589,54 +589,54 @@ function buildEnemyCombatGroup(encounterId, tileId) {
         }
       ],
 
-      Furnace_Hound: [
-        {
-          unit_id: "enemy_furnace_hound_a",
-          unit_type: "enemy",
-          display_name: "Furnace Hound A",
-          hp: 420,
-          max_hp: 420,
-          ap: 130,
-          max_ap: 130,
-          damage_bonus: 34,
-          defense_bonus: 18,
-          armor_penetration: 11,
-          lifesteal: 0,
-          attack_sequence: ["Slash"],
-          target_strategy: "lowest_hp",
-          skill_cooldowns: {},
-          sequence_index: 0,
-          block_active: false,
-          intercept_active: false,
-          guard_stance_turns: 0,
-          last_skill_used: "",
-          is_alive: true
-        },
-        {
-          unit_id: "enemy_furnace_hound_b",
-          unit_type: "enemy",
-          display_name: "Furnace Hound B",
-          hp: 420,
-          max_hp: 420,
-          ap: 130,
-          max_ap: 130,
-          damage_bonus: 34,
-          defense_bonus: 18,
-          armor_penetration: 11,
-          lifesteal: 0,
-          attack_sequence: ["Slash"],
-          target_strategy: "lowest_hp",
-          skill_cooldowns: {},
-          sequence_index: 0,
-          block_active: false,
-          intercept_active: false,
-          guard_stance_turns: 0,
-          last_skill_used: "",
-          is_alive: true
-        }
-      ]
-    }
-  };
+Furnace_Hound: [
+  {
+    unit_id: "enemy_furnace_hound_a",
+    unit_type: "enemy",
+    display_name: "Furnace Hound A",
+    hp: 420,
+    max_hp: 420,
+    ap: 130,
+    max_ap: 130,
+    damage_bonus: 34,
+    defense_bonus: 18,
+    armor_penetration: 11,
+    lifesteal: 0,
+    attack_sequence: ["Furnace Bite", "Intercept"],
+    target_strategy: "lowest_hp",
+    skill_cooldowns: createSkillCooldownMap(["Furnace Bite", "Intercept"]),
+    sequence_index: 0,
+    block_active: false,
+    intercept_active: false,
+    guard_stance_turns: 0,
+    last_skill_used: "",
+    is_alive: true
+  },
+  {
+    unit_id: "enemy_furnace_hound_b",
+    unit_type: "enemy",
+    display_name: "Furnace Hound B",
+    hp: 420,
+    max_hp: 420,
+    ap: 130,
+    max_ap: 130,
+    damage_bonus: 34,
+    defense_bonus: 18,
+    armor_penetration: 11,
+    lifesteal: 0,
+    attack_sequence: ["Furnace Bite", "Intercept"],
+    target_strategy: "lowest_hp",
+    skill_cooldowns: createSkillCooldownMap(["Furnace Bite", "Intercept"]),
+    sequence_index: 0,
+    block_active: false,
+    intercept_active: false,
+    guard_stance_turns: 0,
+    last_skill_used: "",
+    is_alive: true
+  }
+]
+}
+};
 
   const tileEncounters = encounters[tileId];
   if (!tileEncounters) return [];
@@ -804,11 +804,13 @@ function getNextSkillName(unit) {
 function reducePartyCooldowns(units) {
   for (const unit of units) {
     const cooldowns = unit.skill_cooldowns || {};
+
     for (const skillName of Object.keys(cooldowns)) {
       if (Number(cooldowns[skillName]) > 0) {
         cooldowns[skillName] = Number(cooldowns[skillName]) - 1;
       }
     }
+
     unit.skill_cooldowns = cooldowns;
   }
 }
@@ -820,43 +822,87 @@ function reduceGuardStanceTurns(units) {
   }
 }
 
-function getSkillData(skillName) {
-  const skills = {
-    Slash: {
-      name: "Slash",
-      type: "Offensive",
-      cost: 5,
-      damage: 5,
-      flat_bonus: 0,
-      multiplier: 1.0,
-      cooldown: 0
-    },
-    Block: {
-      name: "Block",
-      type: "Defensive",
-      cost: 5,
-      cooldown: 1
-    },
-    Intercept: {
-      name: "Intercept",
-      type: "Defensive",
-      cost: 5,
-      cooldown: 1
-    },
-    "Guard Stance": {
-      name: "Guard Stance",
-      type: "Defensive",
-      cost: 8,
-      cooldown: 2
-    }
-  };
+const SKILL_REGISTRY = {
+  Slash: {
+    name: "Slash",
+    type: "Offensive",
+    cost: 5,
+    damage: 5,
+    flat_bonus: 0,
+    multiplier: 1.0,
+    cooldown: 0
+  },
 
-  return skills[skillName] || skills["Slash"];
+  Block: {
+    name: "Block",
+    type: "Defensive",
+    cost: 5,
+    cooldown: 1
+  },
+
+  Intercept: {
+    name: "Intercept",
+    type: "Defensive",
+    cost: 5,
+    cooldown: 1
+  },
+
+  "Guard Stance": {
+    name: "Guard Stance",
+    type: "Defensive",
+    cost: 8,
+    cooldown: 2
+  },
+
+  "Final Thrust": {
+    name: "Final Thrust",
+    type: "Offensive",
+    cost: 8,
+    damage: 8,
+    flat_bonus: 4,
+    multiplier: 1.35,
+    cooldown: 1
+  },
+
+  Impale: {
+    name: "Impale",
+    type: "Offensive",
+    cost: 10,
+    damage: 10,
+    flat_bonus: 6,
+    multiplier: 1.45,
+    cooldown: 2
+  },
+
+  "Precision Hit": {
+    name: "Precision Hit",
+    type: "Offensive",
+    cost: 7,
+    damage: 6,
+    flat_bonus: 3,
+    multiplier: 1.25,
+    cooldown: 1
+  },
+
+  "Furnace Bite": {
+    name: "Furnace Bite",
+    type: "Offensive",
+    cost: 8,
+    damage: 8,
+    flat_bonus: 4,
+    multiplier: 1.20,
+    cooldown: 1
+  }
+};
+
+function getSkillData(skillName) {
+  const normalizedSkillName = String(skillName || "").trim();
+  return SKILL_REGISTRY[normalizedSkillName] || SKILL_REGISTRY["Slash"];
 }
 
 function resolveSkillForUse(unit, skillName) {
   const cooldowns = unit.skill_cooldowns || {};
-  const normalizedSkillName = String(skillName || "Slash");
+  const normalizedSkillName = String(skillName || "Slash").trim();
 
   if (cooldowns[normalizedSkillName] && Number(cooldowns[normalizedSkillName]) > 0) {
     return getSkillData("Slash");
