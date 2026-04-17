@@ -18,6 +18,14 @@ const wss = new WebSocket.Server({ server, path: "/ws" });
 
 const PORT = process.env.PORT || 3000;
 
+process.on("uncaughtException", (err) => {
+  console.error("UNCAUGHT EXCEPTION ->", err);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("UNHANDLED REJECTION ->", reason);
+});
+
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SECRET_KEY
@@ -218,7 +226,7 @@ wss.on("connection", (ws) => {
       }
 
       // COMBAT CREATE REQUEST
-      if (type === "combat_create_request") {
+if (type === "combat_create_request") {
   const playerName = String(data.player_name || "").trim();
   const encounterId = String(data.encounter_id || "").trim();
   const tileId = String(data.tile_id || "").trim();
@@ -235,18 +243,27 @@ wss.on("connection", (ws) => {
   });
 
   if (!playerName || !encounterId || !tileId) {
+    console.log("COMBAT CREATE ABORT -> missing fields");
     sendWs(ws, { type: "error", message: "Missing combat_create_request fields" });
     return;
   }
 
+  console.log("COMBAT CREATE STEP 1 -> finding party");
   const party = await findPartyByPlayer(playerName);
+  console.log("COMBAT CREATE STEP 1 RESULT ->", party);
+
   if (!party || !party.party_id) {
+    console.log("COMBAT CREATE ABORT -> player is not in a party");
     sendWs(ws, { type: "error", message: "Player is not in a party" });
     return;
   }
 
+  console.log("COMBAT CREATE STEP 2 -> checking existing combat");
   const existingCombat = findCombatByPlayer(playerName);
+  console.log("COMBAT CREATE STEP 2 RESULT ->", existingCombat ? existingCombat.combat_id : null);
+
   if (existingCombat) {
+    console.log("COMBAT CREATE STEP 2A -> sending existing combat_state");
     sendWs(ws, {
       type: "combat_state",
       combat: sanitizeCombatState(existingCombat)
@@ -254,6 +271,7 @@ wss.on("connection", (ws) => {
     return;
   }
 
+  console.log("COMBAT CREATE STEP 3 -> creating combat instance");
   const combat = await createPartyCombatInstance(
     party.party_id,
     encounterId,
@@ -264,7 +282,9 @@ wss.on("connection", (ws) => {
       target_strategy: targetStrategy
     }
   );
+  console.log("COMBAT CREATE STEP 3 RESULT ->", combat.combat_id);
 
+  console.log("COMBAT CREATE STEP 4 -> broadcasting combat_created");
   broadcastToParty(party.party_id, {
     type: "combat_created",
     combat_id: combat.combat_id,
@@ -273,8 +293,13 @@ wss.on("connection", (ws) => {
     tile_id: tileId
   });
 
+  console.log("COMBAT CREATE STEP 5 -> broadcasting combat_state");
   broadcastCombatState(combat.combat_id);
+
+  console.log("COMBAT CREATE STEP 6 -> starting combat loop");
   startCombatLoop(combat.combat_id);
+
+  console.log("COMBAT CREATE DONE ->", combat.combat_id);
   return;
 }
 
@@ -639,7 +664,18 @@ function sanitizeCombatState(combat) {
 
 function broadcastCombatState(combatId) {
   const combat = combatInstances.get(combatId);
-  if (!combat) return;
+  if (!combat) {
+    console.log("BROADCAST COMBAT STATE -> combat not found", combatId);
+    return;
+  }
+
+  console.log("BROADCAST COMBAT STATE ->", {
+    combatId,
+    partyId: combat.party_id,
+    round: combat.round,
+    playerCount: combat.player_units.length,
+    enemyCount: combat.enemy_units.length
+  });
 
   broadcastToParty(combat.party_id, {
     type: "combat_state",
@@ -654,6 +690,14 @@ async function createPartyCombatInstance(
   startedBy,
   starterConfig = {}
 ) {
+  console.log("CREATE COMBAT INSTANCE -> START", {
+    partyId,
+    encounterId,
+    tileId,
+    startedBy,
+    starterConfig
+  });
+
   if (!partyId || !encounterId || !tileId || !startedBy) {
     throw new Error("Missing combat creation parameters");
   }
@@ -669,19 +713,30 @@ async function createPartyCombatInstance(
     throw new Error("Party has no members");
   }
 
+  console.log("CREATE COMBAT INSTANCE -> membersRows", membersRows);
+
   const playerUnits = [];
-for (const row of membersRows) {
-  const isStarter = row.player_name === startedBy;
+  for (const row of membersRows) {
+    const isStarter = row.player_name === startedBy;
 
-  const unit = await buildPlayerCombatUnit(row.player_name, {
-    attack_sequence: isStarter ? starterConfig.attack_sequence : ["Slash"],
-    target_strategy: isStarter ? starterConfig.target_strategy : "first_alive"
-  });
+    console.log("CREATE COMBAT INSTANCE -> building player unit", {
+      row: row.player_name,
+      isStarter
+    });
 
-  playerUnits.push(unit);
-}
+    const unit = await buildPlayerCombatUnit(row.player_name, {
+      attack_sequence: isStarter ? starterConfig.attack_sequence : ["Slash"],
+      target_strategy: isStarter ? starterConfig.target_strategy : "first_alive"
+    });
+
+    playerUnits.push(unit);
+  }
+
+  console.log("CREATE COMBAT INSTANCE -> playerUnits built", playerUnits);
 
   const enemyUnits = buildEnemyCombatGroup(encounterId, tileId);
+  console.log("CREATE COMBAT INSTANCE -> enemyUnits built", enemyUnits);
+
   if (!enemyUnits || enemyUnits.length === 0) {
     throw new Error("Encounter not found for tile");
   }
@@ -708,9 +763,12 @@ for (const row of membersRows) {
   combatInstances.set(combatId, combatInstance);
 
   for (const unit of playerUnits) {
-    playerCombatIndex.set(unit.player_name, combatId);
+    if (unit.player_name) {
+      playerCombatIndex.set(unit.player_name, combatId);
+    }
   }
 
+  console.log("CREATE COMBAT INSTANCE -> DONE", combatId);
   return combatInstance;
 }
 
