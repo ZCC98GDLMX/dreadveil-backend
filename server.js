@@ -219,55 +219,64 @@ wss.on("connection", (ws) => {
 
       // COMBAT CREATE REQUEST
       if (type === "combat_create_request") {
-        const playerName = String(data.player_name || "").trim();
-        const encounterId = String(data.encounter_id || "").trim();
-        const tileId = String(data.tile_id || "").trim();
+  const playerName = String(data.player_name || "").trim();
+  const encounterId = String(data.encounter_id || "").trim();
+  const tileId = String(data.tile_id || "").trim();
 
-        console.log("COMBAT CREATE REQUEST ->", {
-          playerName,
-          encounterId,
-          tileId
-        });
+  const attackSequence = normalizeAttackSequence(data.attack_sequence);
+  const targetStrategy = normalizeTargetStrategy(data.target_strategy);
 
-        if (!playerName || !encounterId || !tileId) {
-          sendWs(ws, { type: "error", message: "Missing combat_create_request fields" });
-          return;
-        }
+  console.log("COMBAT CREATE REQUEST ->", {
+    playerName,
+    encounterId,
+    tileId,
+    attackSequence,
+    targetStrategy
+  });
 
-        const party = await findPartyByPlayer(playerName);
-        if (!party || !party.party_id) {
-          sendWs(ws, { type: "error", message: "Player is not in a party" });
-          return;
-        }
+  if (!playerName || !encounterId || !tileId) {
+    sendWs(ws, { type: "error", message: "Missing combat_create_request fields" });
+    return;
+  }
 
-        const existingCombat = findCombatByPlayer(playerName);
-        if (existingCombat) {
-          sendWs(ws, {
-            type: "combat_state",
-            combat: sanitizeCombatState(existingCombat)
-          });
-          return;
-        }
+  const party = await findPartyByPlayer(playerName);
+  if (!party || !party.party_id) {
+    sendWs(ws, { type: "error", message: "Player is not in a party" });
+    return;
+  }
 
-        const combat = await createPartyCombatInstance(
-          party.party_id,
-          encounterId,
-          tileId,
-          playerName
-        );
+  const existingCombat = findCombatByPlayer(playerName);
+  if (existingCombat) {
+    sendWs(ws, {
+      type: "combat_state",
+      combat: sanitizeCombatState(existingCombat)
+    });
+    return;
+  }
 
-        broadcastToParty(party.party_id, {
-          type: "combat_created",
-          combat_id: combat.combat_id,
-          party_id: party.party_id,
-          encounter_id: encounterId,
-          tile_id: tileId
-        });
+  const combat = await createPartyCombatInstance(
+    party.party_id,
+    encounterId,
+    tileId,
+    playerName,
+    {
+      attack_sequence: attackSequence,
+      target_strategy: targetStrategy
+    }
+  );
 
-        broadcastCombatState(combat.combat_id);
-        startCombatLoop(combat.combat_id);
-        return;
-      }
+  broadcastToParty(party.party_id, {
+    type: "combat_created",
+    combat_id: combat.combat_id,
+    party_id: party.party_id,
+    encounter_id: encounterId,
+    tile_id: tileId
+  });
+
+  broadcastCombatState(combat.combat_id);
+  startCombatLoop(combat.combat_id);
+  return;
+}
 
       // COMBAT STATE REQUEST
       if (type === "combat_state_request") {
@@ -405,7 +414,54 @@ app.get("/api/party/state", async (req, res) => {
   }
 });
 
-async function buildPlayerCombatUnit(playerName) {
+function normalizeAttackSequence(sequence) {
+  if (!Array.isArray(sequence)) return [];
+
+  return sequence
+    .map((skill) => String(skill || "").trim())
+    .filter((skill) => skill.length > 0);
+}
+
+function normalizeTargetStrategy(strategy) {
+  const value = String(strategy || "").trim();
+
+  const allowed = new Set([
+    "first_alive",
+    "lowest_hp",
+    "highest_hp",
+    "random"
+  ]);
+
+  if (!allowed.has(value)) {
+    return "first_alive";
+  }
+
+  return value;
+}
+
+function createSkillCooldownMap(sequence = []) {
+  const result = {};
+
+  for (const skillName of sequence) {
+    result[String(skillName)] = 0;
+  }
+
+  if (!result["Slash"]) {
+    result["Slash"] = 0;
+  }
+
+  return result;
+}
+
+async function buildPlayerCombatUnit(playerName, options = {}) {
+  const normalizedSequence = normalizeAttackSequence(options.attack_sequence);
+  const finalAttackSequence =
+    normalizedSequence.length > 0 ? normalizedSequence : ["Slash"];
+
+  const finalTargetStrategy = normalizeTargetStrategy(
+    options.target_strategy || "first_alive"
+  );
+
   return {
     unit_id: "player_" + playerName,
     unit_type: "player",
@@ -422,9 +478,9 @@ async function buildPlayerCombatUnit(playerName) {
     armor_penetration: 0,
     lifesteal: 0,
 
-    attack_sequence: ["Slash"],
-    target_strategy: "first_alive",
-    skill_cooldowns: {},
+    attack_sequence: finalAttackSequence,
+    target_strategy: finalTargetStrategy,
+    skill_cooldowns: createSkillCooldownMap(finalAttackSequence),
     sequence_index: 0,
 
     block_active: false,
@@ -591,7 +647,13 @@ function broadcastCombatState(combatId) {
   });
 }
 
-async function createPartyCombatInstance(partyId, encounterId, tileId, startedBy) {
+async function createPartyCombatInstance(
+  partyId,
+  encounterId,
+  tileId,
+  startedBy,
+  starterConfig = {}
+) {
   if (!partyId || !encounterId || !tileId || !startedBy) {
     throw new Error("Missing combat creation parameters");
   }
@@ -608,10 +670,16 @@ async function createPartyCombatInstance(partyId, encounterId, tileId, startedBy
   }
 
   const playerUnits = [];
-  for (const row of membersRows) {
-    const unit = await buildPlayerCombatUnit(row.player_name);
-    playerUnits.push(unit);
-  }
+for (const row of membersRows) {
+  const isStarter = row.player_name === startedBy;
+
+  const unit = await buildPlayerCombatUnit(row.player_name, {
+    attack_sequence: isStarter ? starterConfig.attack_sequence : ["Slash"],
+    target_strategy: isStarter ? starterConfig.target_strategy : "first_alive"
+  });
+
+  playerUnits.push(unit);
+}
 
   const enemyUnits = buildEnemyCombatGroup(encounterId, tileId);
   if (!enemyUnits || enemyUnits.length === 0) {
@@ -730,11 +798,13 @@ function getSkillData(skillName) {
 
 function resolveSkillForUse(unit, skillName) {
   const cooldowns = unit.skill_cooldowns || {};
-  if (cooldowns[skillName] && Number(cooldowns[skillName]) > 0) {
+  const normalizedSkillName = String(skillName || "Slash");
+
+  if (cooldowns[normalizedSkillName] && Number(cooldowns[normalizedSkillName]) > 0) {
     return getSkillData("Slash");
   }
 
-  return getSkillData(skillName);
+  return getSkillData(normalizedSkillName);
 }
 
 function applySkillCooldown(unit, skillName, skillData) {
