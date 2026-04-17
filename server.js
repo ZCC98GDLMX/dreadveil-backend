@@ -47,6 +47,9 @@ const combatInstances = new Map();
 const playerCombatIndex = new Map();
 // player_name -> combat_id
 
+const playerCombatConfigs = new Map();
+// player_name -> { attack_sequence: [], target_strategy: "first_alive", updated_at: ... }
+
 const COMBAT_ROUND_INTERVAL_MS = 1800;
 const COMBAT_FINISH_CLEANUP_MS = 8000;
 
@@ -165,6 +168,13 @@ wss.on("connection", (ws) => {
         client.player_name = playerName;
         wsClients.set(ws, client);
 
+        if (!playerCombatConfigs.has(playerName)) {
+          savePlayerCombatConfig(playerName, {
+           attack_sequence: ["Slash"],
+           target_strategy: "first_alive"
+        });
+      }
+
         const party = await findPartyByPlayer(playerName);
         if (party && party.party_id) {
           joinPartyRoom(ws, party.party_id);
@@ -224,6 +234,39 @@ wss.on("connection", (ws) => {
 
         return;
       }
+
+
+      // COMBAT CONFIG UPDATE
+if (type === "combat_config_update") {
+  const playerName = String(data.player_name || "").trim();
+  const attackSequence = normalizeAttackSequence(data.attack_sequence);
+  const targetStrategy = normalizeTargetStrategy(data.target_strategy);
+
+  if (!playerName) {
+    sendWs(ws, { type: "error", message: "Missing player_name" });
+    return;
+  }
+
+  savePlayerCombatConfig(playerName, {
+    attack_sequence: attackSequence,
+    target_strategy: targetStrategy
+  });
+
+  console.log("COMBAT CONFIG UPDATED ->", {
+    playerName,
+    attackSequence,
+    targetStrategy
+  });
+
+  sendWs(ws, {
+    type: "combat_config_updated",
+    player_name: playerName,
+    attack_sequence: attackSequence,
+    target_strategy: targetStrategy
+  });
+
+  return;
+}
 
       // COMBAT CREATE REQUEST
 if (type === "combat_create_request") {
@@ -715,22 +758,39 @@ async function createPartyCombatInstance(
 
   console.log("CREATE COMBAT INSTANCE -> membersRows", membersRows);
 
-  const playerUnits = [];
-  for (const row of membersRows) {
-    const isStarter = row.player_name === startedBy;
+const playerUnits = [];
+for (const row of membersRows) {
+  const memberName = row.player_name;
+  const isStarter = memberName === startedBy;
 
-    console.log("CREATE COMBAT INSTANCE -> building player unit", {
-      row: row.player_name,
-      isStarter
-    });
+  let memberCombatConfig = getPlayerCombatConfig(memberName);
 
-    const unit = await buildPlayerCombatUnit(row.player_name, {
-      attack_sequence: isStarter ? starterConfig.attack_sequence : ["Slash"],
-      target_strategy: isStarter ? starterConfig.target_strategy : "first_alive"
-    });
+  if (isStarter) {
+    const starterSequence = normalizeAttackSequence(starterConfig.attack_sequence);
+    const starterTargetStrategy = normalizeTargetStrategy(starterConfig.target_strategy);
 
-    playerUnits.push(unit);
+    memberCombatConfig = {
+      attack_sequence: starterSequence.length > 0
+        ? starterSequence
+        : memberCombatConfig.attack_sequence,
+      target_strategy: starterTargetStrategy || memberCombatConfig.target_strategy
+    };
+
+    savePlayerCombatConfig(memberName, memberCombatConfig);
   }
+
+  console.log("CREATE COMBAT INSTANCE -> member combat config", {
+    memberName,
+    memberCombatConfig
+  });
+
+  const unit = await buildPlayerCombatUnit(memberName, {
+    attack_sequence: memberCombatConfig.attack_sequence,
+    target_strategy: memberCombatConfig.target_strategy
+  });
+
+  playerUnits.push(unit);
+}
 
   console.log("CREATE COMBAT INSTANCE -> playerUnits built", playerUnits);
 
@@ -789,6 +849,33 @@ function countAliveUnits(units) {
 
 function isTeamDefeated(units) {
   return countAliveUnits(units) === 0;
+}
+
+function savePlayerCombatConfig(playerName, config = {}) {
+  const normalizedSequence = normalizeAttackSequence(config.attack_sequence);
+  const normalizedTargetStrategy = normalizeTargetStrategy(config.target_strategy);
+
+  playerCombatConfigs.set(playerName, {
+    attack_sequence: normalizedSequence.length > 0 ? normalizedSequence : ["Slash"],
+    target_strategy: normalizedTargetStrategy,
+    updated_at: new Date().toISOString()
+  });
+}
+
+function getPlayerCombatConfig(playerName) {
+  const config = playerCombatConfigs.get(playerName);
+
+  if (!config) {
+    return {
+      attack_sequence: ["Slash"],
+      target_strategy: "first_alive"
+    };
+  }
+
+  return {
+    attack_sequence: normalizeAttackSequence(config.attack_sequence),
+    target_strategy: normalizeTargetStrategy(config.target_strategy)
+  };
 }
 
 function getNextSkillName(unit) {
