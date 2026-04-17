@@ -52,6 +52,8 @@ const playerCombatConfigs = new Map();
 
 const COMBAT_ROUND_INTERVAL_MS = 1800;
 const COMBAT_FINISH_CLEANUP_MS = 8000;
+const COMBAT_ACTION_INTERVAL_MS = 1000;
+const COMBAT_ROUND_START_DELAY_MS = 600;
 
 function sendWs(ws, payload) {
   if (ws.readyState === 1) {
@@ -1258,6 +1260,66 @@ function destroyCombatInstance(combatId) {
   combatInstances.delete(combatId);
 }
 
+function buildRoundActionQueue(combat) {
+  const queue = [];
+
+  for (let i = 0; i < combat.player_units.length; i++) {
+    queue.push({
+      side: "players",
+      attackerIndex: i
+    });
+  }
+
+  for (let i = 0; i < combat.enemy_units.length; i++) {
+    queue.push({
+      side: "enemies",
+      attackerIndex: i
+    });
+  }
+
+  return queue;
+}
+
+function finishCombatAndScheduleCleanup(combat) {
+  if (!combat) return;
+
+  broadcastToParty(combat.party_id, {
+    type: "combat_finished",
+    combat_id: combat.combat_id,
+    result: combat.status
+  });
+
+  setTimeout(() => {
+    destroyCombatInstance(combat.combat_id);
+  }, COMBAT_FINISH_CLEANUP_MS);
+}
+
+function processSingleCombatAction(combat, actionEntry) {
+  if (!combat || combat.status !== "active") return null;
+  if (!actionEntry) return null;
+
+  const isPlayersTurn = actionEntry.side === "players";
+
+  const attackerParty = isPlayersTurn ? combat.player_units : combat.enemy_units;
+  const defenderParty = isPlayersTurn ? combat.enemy_units : combat.player_units;
+
+  combat.turn_phase = isPlayersTurn ? "players" : "enemies";
+
+  const result = performUnitAction(
+    attackerParty,
+    defenderParty,
+    Number(actionEntry.attackerIndex || 0)
+  );
+
+  if (isTeamDefeated(combat.enemy_units)) {
+    combat.status = "players_win";
+  } else if (isTeamDefeated(combat.player_units)) {
+    combat.status = "enemies_win";
+  }
+
+  return result;
+}
+
 function startCombatLoop(combatId) {
   const combat = combatInstances.get(combatId);
   if (!combat || combat.auto_loop_started) return;
@@ -1269,55 +1331,85 @@ function startCombatLoop(combatId) {
     if (!currentCombat) return;
 
     if (currentCombat.status !== "active") {
-      broadcastToParty(currentCombat.party_id, {
-        type: "combat_finished",
-        combat_id: currentCombat.combat_id,
-        result: currentCombat.status
-      });
-
-      setTimeout(() => {
-        destroyCombatInstance(currentCombat.combat_id);
-      }, COMBAT_FINISH_CLEANUP_MS);
-
+      finishCombatAndScheduleCleanup(currentCombat);
       return;
     }
+
+    currentCombat.round += 1;
+    currentCombat.turn_phase = "players";
+
+    reducePartyCooldowns(currentCombat.player_units);
+    reducePartyCooldowns(currentCombat.enemy_units);
+    reduceGuardStanceTurns(currentCombat.player_units);
+    reduceGuardStanceTurns(currentCombat.enemy_units);
 
     broadcastToParty(currentCombat.party_id, {
       type: "combat_round_started",
       combat_id: currentCombat.combat_id,
-      round: currentCombat.round + 1
+      round: currentCombat.round
     });
 
-    const roundResults = processCombatRound(currentCombat);
+    const actionQueue = buildRoundActionQueue(currentCombat);
+    const roundResults = [];
 
-    for (const result of roundResults) {
-      broadcastToParty(currentCombat.party_id, {
-        type: "combat_action_result",
-        combat_id: currentCombat.combat_id,
-        result: result
-      });
-    }
+    const runNextAction = () => {
+      const latestCombat = combatInstances.get(combatId);
+      if (!latestCombat) return;
 
-    broadcastCombatState(currentCombat.combat_id);
+      if (latestCombat.status !== "active") {
+        latestCombat.resolved_actions_log = roundResults;
+        broadcastCombatState(latestCombat.combat_id);
+        finishCombatAndScheduleCleanup(latestCombat);
+        return;
+      }
 
-    if (currentCombat.status !== "active") {
-      broadcastToParty(currentCombat.party_id, {
-        type: "combat_finished",
-        combat_id: currentCombat.combat_id,
-        result: currentCombat.status
-      });
+      if (actionQueue.length === 0) {
+        if (latestCombat.round >= 15 && latestCombat.status === "active") {
+          latestCombat.status = "round_limit";
+        }
 
-      setTimeout(() => {
-        destroyCombatInstance(currentCombat.combat_id);
-      }, COMBAT_FINISH_CLEANUP_MS);
+        latestCombat.turn_phase = "players";
+        latestCombat.resolved_actions_log = roundResults;
+        broadcastCombatState(latestCombat.combat_id);
 
-      return;
-    }
+        if (latestCombat.status !== "active") {
+          finishCombatAndScheduleCleanup(latestCombat);
+          return;
+        }
 
-    currentCombat.round_timer = setTimeout(runRound, COMBAT_ROUND_INTERVAL_MS);
+        latestCombat.round_timer = setTimeout(runRound, COMBAT_ACTION_INTERVAL_MS);
+        return;
+      }
+
+      const actionEntry = actionQueue.shift();
+      const result = processSingleCombatAction(latestCombat, actionEntry);
+
+      if (result) {
+        roundResults.push(result);
+
+        broadcastToParty(latestCombat.party_id, {
+          type: "combat_action_result",
+          combat_id: latestCombat.combat_id,
+          result: result
+        });
+
+        broadcastCombatState(latestCombat.combat_id);
+      }
+
+      if (latestCombat.status !== "active") {
+        latestCombat.resolved_actions_log = roundResults;
+        broadcastCombatState(latestCombat.combat_id);
+        finishCombatAndScheduleCleanup(latestCombat);
+        return;
+      }
+
+      latestCombat.round_timer = setTimeout(runNextAction, COMBAT_ACTION_INTERVAL_MS);
+    };
+
+    currentCombat.round_timer = setTimeout(runNextAction, COMBAT_ROUND_START_DELAY_MS);
   };
 
-  combat.round_timer = setTimeout(runRound, 1200);
+  combat.round_timer = setTimeout(runRound, 800);
 }
 app.post("/api/party/invite", async (req, res) => {
   try {
