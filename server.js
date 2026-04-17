@@ -304,17 +304,18 @@ if (type === "combat_create_request") {
   }
 
   console.log("COMBAT CREATE STEP 2 -> checking existing combat");
-  const existingCombat = findCombatByPlayer(playerName);
-  console.log("COMBAT CREATE STEP 2 RESULT ->", existingCombat ? existingCombat.combat_id : null);
-
-  if (existingCombat) {
-    console.log("COMBAT CREATE STEP 2A -> sending existing combat_state");
+const existingCombat = findCombatByPlayer(playerName);
+if (existingCombat) {
+  if (existingCombat.status === "active") {
     sendWs(ws, {
       type: "combat_state",
       combat: sanitizeCombatState(existingCombat)
     });
     return;
   }
+
+  destroyCombatInstance(existingCombat.combat_id);
+}
 
   console.log("COMBAT CREATE STEP 3 -> creating combat instance");
   const combat = await createPartyCombatInstance(
