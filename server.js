@@ -268,134 +268,6 @@ if (type === "identify") {
   return;
 }
 
-
-function normalizeCombatProfilePayload(payload = {}) {
-  return {
-    player_name: String(payload.player_name || "").trim(),
-    display_name: String(payload.display_name || payload.player_name || "").trim(),
-    player_level: Math.max(1, Number(payload.player_level || 1)),
-
-    strength: Math.max(0, Number(payload.strength || 0)),
-    vitality: Math.max(0, Number(payload.vitality || 0)),
-    defense_stat: Math.max(0, Number(payload.defense_stat || 0)),
-    action_points_stat: Math.max(0, Number(payload.action_points_stat || 0)),
-
-    bonus_strength: Math.max(0, Number(payload.bonus_strength || 0)),
-    bonus_vitality: Math.max(0, Number(payload.bonus_vitality || 0)),
-    bonus_defense: Math.max(0, Number(payload.bonus_defense || 0)),
-    bonus_action_points: Math.max(0, Number(payload.bonus_action_points || 0)),
-
-    armor_penetration: Math.max(0, Number(payload.armor_penetration || 0)),
-    critical_chance: Math.max(0, Number(payload.critical_chance || 0)),
-    lifesteal: Math.max(0, Number(payload.lifesteal || 0)),
-
-    max_hp: Math.max(1, Number(payload.max_hp || 100)),
-    max_ap: Math.max(0, Number(payload.max_ap || 100))
-  };
-}
-
-async function upsertPlayerCombatProfile(profile) {
-  const row = normalizeCombatProfilePayload(profile);
-
-  if (!row.player_name) {
-    throw new Error("Missing player_name in combat profile");
-  }
-
-  const { data, error } = await supabase
-    .from("player_combat_profiles")
-    .upsert({
-      ...row,
-      updated_at: new Date().toISOString()
-    }, {
-      onConflict: "player_name"
-    })
-    .select("*")
-    .single();
-
-  if (error) throw error;
-  return data;
-}
-
-async function getPlayerCombatProfile(playerName) {
-  const normalizedName = String(playerName || "").trim();
-  if (!normalizedName) return null;
-
-  const { data, error } = await supabase
-    .from("player_combat_profiles")
-    .select("*")
-    .eq("player_name", normalizedName)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data;
-}
-
-async function upsertPlayerCombatConfig(playerName, config = {}) {
-  const normalizedName = String(playerName || "").trim();
-  if (!normalizedName) {
-    throw new Error("Missing player_name in combat config");
-  }
-
-  const attackSequence = normalizeAttackSequence(config.attack_sequence);
-  const targetStrategy = normalizeTargetStrategy(config.target_strategy);
-
-  const { data, error } = await supabase
-    .from("player_combat_configs")
-    .upsert({
-      player_name: normalizedName,
-      attack_sequence: attackSequence,
-      target_strategy: targetStrategy,
-      updated_at: new Date().toISOString()
-    }, {
-      onConflict: "player_name"
-    })
-    .select("*")
-    .single();
-
-  if (error) throw error;
-
-  savePlayerCombatConfig(normalizedName, {
-    attack_sequence: data.attack_sequence,
-    target_strategy: data.target_strategy
-  });
-
-  return data;
-}
-
-async function getPlayerCombatConfigFromDb(playerName) {
-  const normalizedName = String(playerName || "").trim();
-  if (!normalizedName) return null;
-
-  const { data, error } = await supabase
-    .from("player_combat_configs")
-    .select("*")
-    .eq("player_name", normalizedName)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data;
-}
-
-async function getResolvedPlayerCombatConfig(playerName) {
-  const dbConfig = await getPlayerCombatConfigFromDb(playerName);
-
-  if (dbConfig) {
-    const resolved = {
-      attack_sequence: normalizeAttackSequence(dbConfig.attack_sequence),
-      target_strategy: normalizeTargetStrategy(dbConfig.target_strategy)
-    };
-
-    savePlayerCombatConfig(playerName, resolved);
-    return resolved;
-  }
-
-  const memoryConfig = getPlayerCombatConfig(playerName);
-
-  await upsertPlayerCombatConfig(playerName, memoryConfig);
-  return memoryConfig;
-}
-
-
       // COMBAT CONFIG UPDATE
 if (type === "combat_config_update") {
   const playerName = String(data.player_name || "").trim();
@@ -666,6 +538,133 @@ function normalizeTargetStrategy(strategy) {
   }
 
   return value;
+}
+
+function normalizeCombatProfilePayload(payload = {}) {
+  return {
+    player_name: String(payload.player_name || "").trim(),
+    display_name: String(payload.display_name || payload.player_name || "").trim(),
+    player_level: Math.max(1, Number(payload.player_level || 1)),
+
+    strength: Math.max(0, Number(payload.strength || 0)),
+    vitality: Math.max(0, Number(payload.vitality || 0)),
+    defense_stat: Math.max(0, Number(payload.defense_stat || 0)),
+    action_points_stat: Math.max(0, Number(payload.action_points_stat || 0)),
+
+    bonus_strength: Math.max(0, Number(payload.bonus_strength || 0)),
+    bonus_vitality: Math.max(0, Number(payload.bonus_vitality || 0)),
+    bonus_defense: Math.max(0, Number(payload.bonus_defense || 0)),
+    bonus_action_points: Math.max(0, Number(payload.bonus_action_points || 0)),
+
+    armor_penetration: Math.max(0, Number(payload.armor_penetration || 0)),
+    critical_chance: Math.max(0, Number(payload.critical_chance || 0)),
+    lifesteal: Math.max(0, Number(payload.lifesteal || 0)),
+
+    max_hp: Math.max(1, Number(payload.max_hp || 100)),
+    max_ap: Math.max(0, Number(payload.max_ap || 100))
+  };
+}
+
+async function upsertPlayerCombatProfile(profile) {
+  const row = normalizeCombatProfilePayload(profile);
+
+  if (!row.player_name) {
+    throw new Error("Missing player_name in combat profile");
+  }
+
+  const { data, error } = await supabase
+    .from("player_combat_profiles")
+    .upsert(
+      {
+        ...row,
+        updated_at: new Date().toISOString()
+      },
+      { onConflict: "player_name" }
+    )
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+async function getPlayerCombatProfile(playerName) {
+  const normalizedName = String(playerName || "").trim();
+  if (!normalizedName) return null;
+
+  const { data, error } = await supabase
+    .from("player_combat_profiles")
+    .select("*")
+    .eq("player_name", normalizedName)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
+}
+
+async function upsertPlayerCombatConfig(playerName, config = {}) {
+  const normalizedName = String(playerName || "").trim();
+  if (!normalizedName) {
+    throw new Error("Missing player_name in combat config");
+  }
+
+  const attackSequence = normalizeAttackSequence(config.attack_sequence);
+  const targetStrategy = normalizeTargetStrategy(config.target_strategy);
+
+  const { data, error } = await supabase
+    .from("player_combat_configs")
+    .upsert(
+      {
+        player_name: normalizedName,
+        attack_sequence: attackSequence,
+        target_strategy: targetStrategy,
+        updated_at: new Date().toISOString()
+      },
+      { onConflict: "player_name" }
+    )
+    .select("*")
+    .single();
+
+  if (error) throw error;
+
+  savePlayerCombatConfig(normalizedName, {
+    attack_sequence: data.attack_sequence,
+    target_strategy: data.target_strategy
+  });
+
+  return data;
+}
+
+async function getPlayerCombatConfigFromDb(playerName) {
+  const normalizedName = String(playerName || "").trim();
+  if (!normalizedName) return null;
+
+  const { data, error } = await supabase
+    .from("player_combat_configs")
+    .select("*")
+    .eq("player_name", normalizedName)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
+}
+
+async function getResolvedPlayerCombatConfig(playerName) {
+  const dbConfig = await getPlayerCombatConfigFromDb(playerName);
+
+  if (dbConfig) {
+    const resolved = {
+      attack_sequence: normalizeAttackSequence(dbConfig.attack_sequence),
+      target_strategy: normalizeTargetStrategy(dbConfig.target_strategy)
+    };
+
+    savePlayerCombatConfig(playerName, resolved);
+    return resolved;
+  }
+
+  const memoryConfig = getPlayerCombatConfig(playerName);
+  await upsertPlayerCombatConfig(playerName, memoryConfig);
+  return memoryConfig;
 }
 
 function createSkillCooldownMap(sequence = []) {
