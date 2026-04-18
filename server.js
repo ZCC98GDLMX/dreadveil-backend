@@ -159,37 +159,43 @@ wss.on("connection", (ws) => {
       }
 
       // IDENTIFY
-      if (type === "identify") {
-        const playerName = String(data.player_name || "").trim();
+if (type === "identify") {
+  const playerName = String(data.player_name || "").trim();
 
-        if (!playerName) {
-          sendWs(ws, { type: "error", message: "Missing player_name" });
-          return;
-        }
+  if (!playerName) {
+    sendWs(ws, { type: "error", message: "Missing player_name" });
+    return;
+  }
 
-        client.player_name = playerName;
-        wsClients.set(ws, client);
+  client.player_name = playerName;
+  wsClients.set(ws, client);
 
-        if (!playerCombatConfigs.has(playerName)) {
-          savePlayerCombatConfig(playerName, {
-           attack_sequence: ["Slash"],
-           target_strategy: "first_alive"
-        });
-      }
+  const existingConfig = await getPlayerCombatConfigFromDb(playerName);
+  if (!existingConfig) {
+    await upsertPlayerCombatConfig(playerName, {
+      attack_sequence: ["Slash"],
+      target_strategy: "first_alive"
+    });
+  } else {
+    savePlayerCombatConfig(playerName, {
+      attack_sequence: normalizeAttackSequence(existingConfig.attack_sequence),
+      target_strategy: normalizeTargetStrategy(existingConfig.target_strategy)
+    });
+  }
 
-        const party = await findPartyByPlayer(playerName);
-        if (party && party.party_id) {
-          joinPartyRoom(ws, party.party_id);
-        }
+  const party = await findPartyByPlayer(playerName);
+  if (party && party.party_id) {
+    joinPartyRoom(ws, party.party_id);
+  }
 
-        sendWs(ws, {
-          type: "identified",
-          player_name: playerName,
-          party_id: party ? party.party_id : null
-        });
+  sendWs(ws, {
+    type: "identified",
+    player_name: playerName,
+    party_id: party ? party.party_id : null
+  });
 
-        return;
-      }
+  return;
+}
 
       // LEAVE ROOM
       if (type === "leave_party_room") {
@@ -237,6 +243,158 @@ wss.on("connection", (ws) => {
         return;
       }
 
+  if (type === "combat_profile_sync") {
+  const profile = normalizeCombatProfilePayload(data);
+
+  if (!profile.player_name) {
+    sendWs(ws, { type: "error", message: "Missing player_name" });
+    return;
+  }
+
+  await upsertPlayerCombatProfile(profile);
+
+  console.log("COMBAT PROFILE SYNCED ->", {
+    playerName: profile.player_name,
+    level: profile.player_level,
+    maxHp: profile.max_hp,
+    maxAp: profile.max_ap
+  });
+
+  sendWs(ws, {
+    type: "combat_profile_synced",
+    player_name: profile.player_name
+  });
+
+  return;
+}
+
+
+function normalizeCombatProfilePayload(payload = {}) {
+  return {
+    player_name: String(payload.player_name || "").trim(),
+    display_name: String(payload.display_name || payload.player_name || "").trim(),
+    player_level: Math.max(1, Number(payload.player_level || 1)),
+
+    strength: Math.max(0, Number(payload.strength || 0)),
+    vitality: Math.max(0, Number(payload.vitality || 0)),
+    defense_stat: Math.max(0, Number(payload.defense_stat || 0)),
+    action_points_stat: Math.max(0, Number(payload.action_points_stat || 0)),
+
+    bonus_strength: Math.max(0, Number(payload.bonus_strength || 0)),
+    bonus_vitality: Math.max(0, Number(payload.bonus_vitality || 0)),
+    bonus_defense: Math.max(0, Number(payload.bonus_defense || 0)),
+    bonus_action_points: Math.max(0, Number(payload.bonus_action_points || 0)),
+
+    armor_penetration: Math.max(0, Number(payload.armor_penetration || 0)),
+    critical_chance: Math.max(0, Number(payload.critical_chance || 0)),
+    lifesteal: Math.max(0, Number(payload.lifesteal || 0)),
+
+    max_hp: Math.max(1, Number(payload.max_hp || 100)),
+    max_ap: Math.max(0, Number(payload.max_ap || 100))
+  };
+}
+
+async function upsertPlayerCombatProfile(profile) {
+  const row = normalizeCombatProfilePayload(profile);
+
+  if (!row.player_name) {
+    throw new Error("Missing player_name in combat profile");
+  }
+
+  const { data, error } = await supabase
+    .from("player_combat_profiles")
+    .upsert({
+      ...row,
+      updated_at: new Date().toISOString()
+    }, {
+      onConflict: "player_name"
+    })
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+async function getPlayerCombatProfile(playerName) {
+  const normalizedName = String(playerName || "").trim();
+  if (!normalizedName) return null;
+
+  const { data, error } = await supabase
+    .from("player_combat_profiles")
+    .select("*")
+    .eq("player_name", normalizedName)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
+}
+
+async function upsertPlayerCombatConfig(playerName, config = {}) {
+  const normalizedName = String(playerName || "").trim();
+  if (!normalizedName) {
+    throw new Error("Missing player_name in combat config");
+  }
+
+  const attackSequence = normalizeAttackSequence(config.attack_sequence);
+  const targetStrategy = normalizeTargetStrategy(config.target_strategy);
+
+  const { data, error } = await supabase
+    .from("player_combat_configs")
+    .upsert({
+      player_name: normalizedName,
+      attack_sequence: attackSequence,
+      target_strategy: targetStrategy,
+      updated_at: new Date().toISOString()
+    }, {
+      onConflict: "player_name"
+    })
+    .select("*")
+    .single();
+
+  if (error) throw error;
+
+  savePlayerCombatConfig(normalizedName, {
+    attack_sequence: data.attack_sequence,
+    target_strategy: data.target_strategy
+  });
+
+  return data;
+}
+
+async function getPlayerCombatConfigFromDb(playerName) {
+  const normalizedName = String(playerName || "").trim();
+  if (!normalizedName) return null;
+
+  const { data, error } = await supabase
+    .from("player_combat_configs")
+    .select("*")
+    .eq("player_name", normalizedName)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
+}
+
+async function getResolvedPlayerCombatConfig(playerName) {
+  const dbConfig = await getPlayerCombatConfigFromDb(playerName);
+
+  if (dbConfig) {
+    const resolved = {
+      attack_sequence: normalizeAttackSequence(dbConfig.attack_sequence),
+      target_strategy: normalizeTargetStrategy(dbConfig.target_strategy)
+    };
+
+    savePlayerCombatConfig(playerName, resolved);
+    return resolved;
+  }
+
+  const memoryConfig = getPlayerCombatConfig(playerName);
+
+  await upsertPlayerCombatConfig(playerName, memoryConfig);
+  return memoryConfig;
+}
+
 
       // COMBAT CONFIG UPDATE
 if (type === "combat_config_update") {
@@ -249,22 +407,22 @@ if (type === "combat_config_update") {
     return;
   }
 
-  savePlayerCombatConfig(playerName, {
+  const savedConfig = await upsertPlayerCombatConfig(playerName, {
     attack_sequence: attackSequence,
     target_strategy: targetStrategy
   });
 
   console.log("COMBAT CONFIG UPDATED ->", {
     playerName,
-    attackSequence,
-    targetStrategy
+    attackSequence: savedConfig.attack_sequence,
+    targetStrategy: savedConfig.target_strategy
   });
 
   sendWs(ws, {
     type: "combat_config_updated",
     player_name: playerName,
-    attack_sequence: attackSequence,
-    target_strategy: targetStrategy
+    attack_sequence: savedConfig.attack_sequence,
+    target_strategy: savedConfig.target_strategy
   });
 
   return;
@@ -524,42 +682,64 @@ function createSkillCooldownMap(sequence = []) {
   return result;
 }
 
-async function buildPlayerCombatUnit(playerName, options = {}) {
-  const normalizedSequence = normalizeAttackSequence(options.attack_sequence);
-  const finalAttackSequence =
-    normalizedSequence.length > 0 ? normalizedSequence : ["Slash"];
+async function buildPlayerCombatUnit(playerName, overrides = {}) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  if (!normalizedPlayerName) {
+    throw new Error("Missing playerName for buildPlayerCombatUnit");
+  }
 
-  const finalTargetStrategy = normalizeTargetStrategy(
-    options.target_strategy || "first_alive"
+  const profile = await getPlayerCombatProfile(normalizedPlayerName);
+  if (!profile) {
+    throw new Error(`Missing combat profile for player ${normalizedPlayerName}`);
+  }
+
+  const persistedConfig = await getResolvedPlayerCombatConfig(normalizedPlayerName);
+
+  const finalAttackSequence = normalizeAttackSequence(
+    overrides.attack_sequence && overrides.attack_sequence.length > 0
+      ? overrides.attack_sequence
+      : persistedConfig.attack_sequence
   );
 
+  const finalTargetStrategy = normalizeTargetStrategy(
+    overrides.target_strategy || persistedConfig.target_strategy
+  );
+
+  const totalStrength =
+    Number(profile.strength || 0) + Number(profile.bonus_strength || 0);
+
+  const totalDefense =
+    Number(profile.defense_stat || 0) + Number(profile.bonus_defense || 0);
+
   return {
-    unit_id: "player_" + playerName,
-    unit_type: "player",
-    player_name: playerName,
-    display_name: playerName,
+    unit_id: `player_${normalizedPlayerName}`,
+    player_name: normalizedPlayerName,
+    display_name: String(profile.display_name || normalizedPlayerName),
 
-    hp: 100,
-    max_hp: 100,
-    ap: 100,
-    max_ap: 100,
+    team: "players",
+    is_player: true,
+    is_enemy: false,
+    alive: true,
 
-    damage_bonus: 10,
-    defense_bonus: 5,
-    armor_penetration: 0,
-    lifesteal: 0,
+    hp: Number(profile.max_hp || 100),
+    max_hp: Number(profile.max_hp || 100),
+    ap: Number(profile.max_ap || 100),
+    max_ap: Number(profile.max_ap || 100),
+
+    damage_bonus: totalStrength,
+    defense_bonus: totalDefense,
+    armor_penetration: Number(profile.armor_penetration || 0),
+    critical_chance: Number(profile.critical_chance || 0),
+    lifesteal: Number(profile.lifesteal || 0),
 
     attack_sequence: finalAttackSequence,
     target_strategy: finalTargetStrategy,
-    skill_cooldowns: createSkillCooldownMap(finalAttackSequence),
-    sequence_index: 0,
 
+    sequence_index: 0,
+    cooldowns: {},
     block_active: false,
     intercept_active: false,
-    guard_stance_turns: 0,
-
-    last_skill_used: "",
-    is_alive: true
+    guard_stance_turns: 0
   };
 }
 
@@ -766,7 +946,7 @@ for (const row of membersRows) {
   const memberName = row.player_name;
   const isStarter = memberName === startedBy;
 
-  let memberCombatConfig = getPlayerCombatConfig(memberName);
+  let memberCombatConfig = await getResolvedPlayerCombatConfig(memberName);
 
   if (isStarter) {
     const starterSequence = normalizeAttackSequence(starterConfig.attack_sequence);
@@ -779,7 +959,8 @@ for (const row of membersRows) {
       target_strategy: starterTargetStrategy || memberCombatConfig.target_strategy
     };
 
-    savePlayerCombatConfig(memberName, memberCombatConfig);
+    await upsertPlayerCombatConfig(memberName, memberCombatConfig);
+    memberCombatConfig = await getResolvedPlayerCombatConfig(memberName);
   }
 
   console.log("CREATE COMBAT INSTANCE -> member combat config", {
