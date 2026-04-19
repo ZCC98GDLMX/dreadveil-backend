@@ -1599,7 +1599,7 @@ const SKILL_REGISTRY = {
     cost: 8,
     damage: 0,
     flat_bonus: 4,
-    multiplier: 1.2,
+    multiplier: 1.20,
     cooldown: 1,
     description: "A savage burning bite from a furnace hound."
   },
@@ -1659,7 +1659,7 @@ const SKILL_REGISTRY = {
     cost: 10,
     damage: 0,
     flat_bonus: 8,
-    multiplier: 1.2,
+    multiplier: 1.20,
     cooldown: 1,
     description: "A burning shot fired from the rear line."
   },
