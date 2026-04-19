@@ -742,6 +742,53 @@ async function buildPlayerCombatUnit(playerName, overrides = {}) {
   };
 }
 
+
+function buildEncounterRewards(encounterId, tileId) {
+  const rewardsByTile = {
+    ct_1: {
+      Furnace_Hound: {
+        xp: 180,
+        gold: 95,
+        skulls: 0,
+        drops: [
+          {
+            item_id: "corrupted_core",
+            name: "Corrupted Core",
+            quantity: 1,
+            stackable: true,
+            type: "Material"
+          }
+        ],
+        mission_tags: ["furnace_hound_kill"]
+      },
+
+      Cinder_Footman: {
+        xp: 120,
+        gold: 60,
+        skulls: 0,
+        drops: [],
+        mission_tags: ["cinder_footman_kill"]
+      }
+    }
+  };
+
+  const tileRewards = rewardsByTile[tileId] || {};
+  const reward = tileRewards[encounterId];
+
+  if (!reward) {
+    return {
+      xp: 0,
+      gold: 0,
+      skulls: 0,
+      drops: [],
+      mission_tags: []
+    };
+  }
+
+  return JSON.parse(JSON.stringify(reward));
+}
+
+
 function buildEnemyCombatGroup(encounterId, tileId) {
   const encounters = {
     ct_1: {
@@ -1464,10 +1511,17 @@ function buildRoundActionQueue(combat) {
 function finishCombatAndScheduleCleanup(combat) {
   if (!combat) return;
 
+  let rewards = null;
+
+  if (combat.status === "players_win") {
+    rewards = buildEncounterRewards(combat.encounter_id, combat.tile_id);
+  }
+
   broadcastToParty(combat.party_id, {
     type: "combat_finished",
     combat_id: combat.combat_id,
-    result: combat.status
+    result: combat.status,
+    rewards: rewards
   });
 
   setTimeout(() => {
