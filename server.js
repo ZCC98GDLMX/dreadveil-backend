@@ -1508,124 +1508,94 @@ function reduceGuardStanceTurns(units) {
 }
 
 const SKILL_REGISTRY = {
-  Slash: {
+  "Slash": {
     name: "Slash",
     type: "Offensive",
-    cost: 5,
-    damage: 5,
+    cost: 10,
+    cooldown: 2,
     flat_bonus: 0,
-    multiplier: 1.0,  
-    cooldown: 0
+    multiplier: 1.0
   },
 
-  Block: {
+  "Block": {
     name: "Block",
     type: "Defensive",
-    cost: 5,
-    cooldown: 1
+    cost: 8,
+    cooldown: 2
   },
 
-  Intercept: {
+  "Intercept": {
     name: "Intercept",
     type: "Defensive",
-    cost: 5,
-    cooldown: 1
+    cost: 10,
+    cooldown: 2
   },
 
   "Guard Stance": {
     name: "Guard Stance",
     type: "Defensive",
-    cost: 8,
-    cooldown: 2
-  },
-
-  "Final Thrust": {
-    name: "Final Thrust",
-    type: "Offensive",
-    cost: 8,
-    damage: 8,
-    flat_bonus: 4,
-    multiplier: 1.35,
-    cooldown: 1
-  },
-
-  Impale: {
-    name: "Impale",
-    type: "Offensive",
     cost: 10,
-    damage: 10,
-    flat_bonus: 6,
-    multiplier: 1.45,
     cooldown: 2
-  },
-
-  "Precision Hit": {
-    name: "Precision Hit",
-    type: "Offensive",
-    cost: 7,
-    damage: 6,
-    flat_bonus: 3,
-    multiplier: 1.25,
-    cooldown: 1
   },
 
   "Furnace Bite": {
     name: "Furnace Bite",
     type: "Offensive",
+    cost: 10,
+    cooldown: 1,
+    flat_bonus: 8,
+    multiplier: 1.25
+  },
+
+  "CinderSlash": {
+    name: "CinderSlash",
+    type: "Offensive",
     cost: 8,
-    damage: 8,
-    flat_bonus: 4,
-    multiplier: 1.20,
-    cooldown: 1
+    cooldown: 1,
+    flat_bonus: 6,
+    multiplier: 1.15
+  },
+
+  "Ashen Guard": {
+    name: "Ashen Guard",
+    type: "Defensive",
+    cost: 9,
+    cooldown: 2
   },
 
   "Bastion Stance": {
-  type: "defensive",
-  cost: 10,
-  cooldown: 2,
-  flat_reduction: 0,
-  reduction_multiplier: 0.25
-},
+    name: "Bastion Stance",
+    type: "Defensive",
+    cost: 10,
+    cooldown: 2
+  },
 
-"Halberd Thrust": {
-  type: "offensive",
-  cost: 12,
-  cooldown: 2,
-  flat_bonus: 10,
-  multiplier: 1.35
-},
+  "Halberd Thrust": {
+    name: "Halberd Thrust",
+    type: "Offensive",
+    cost: 12,
+    cooldown: 2,
+    flat_bonus: 10,
+    multiplier: 1.35
+  },
 
-"CinderSlash": {
-  type: "offensive",
-  cost: 8,
-  cooldown: 1,
-  flat_bonus: 6,
-  multiplier: 1.15
-},
+  "Pyre Shot": {
+    name: "Pyre Shot",
+    type: "Offensive",
+    cost: 10,
+    cooldown: 1,
+    flat_bonus: 8,
+    multiplier: 1.2
+  },
 
-"Ashen Guard": {
-  type: "defensive",
-  cost: 9,
-  cooldown: 2,
-  flat_reduction: 0,
-  reduction_multiplier: 0.20
-},
-
-"Pyre Shot": {
-  type: "offensive",
-  cost: 10,
-  cooldown: 1,
-  flat_bonus: 8,
-  multiplier: 1.20
-},
-
-"Scorch Volley": {
-  type: "offensive",
-  cost: 14,
-  cooldown: 3,
-  flat_bonus: 14,
-  multiplier: 1.45
-}
+  "Scorch Volley": {
+    name: "Scorch Volley",
+    type: "Offensive",
+    cost: 14,
+    cooldown: 3,
+    flat_bonus: 14,
+    multiplier: 1.45
+  }
 };
 
 function getSkillData(skillName) {
@@ -1764,25 +1734,54 @@ function performUnitAction(attackerParty, defenderParty, attackerIndex) {
   const attacker = attackerParty[attackerIndex];
   if (!attacker || !isUnitAlive(attacker)) return null;
 
-  let skillName = getNextSkillName(attacker);
-  let skillData = resolveSkillForUse(attacker, skillName);
-  let resolvedSkillName = String(skillData.name || "Slash");
+  const desiredSkillName = String(getNextSkillName(attacker) || "Slash").trim();
+
+  let skillData = resolveSkillForUse(attacker, desiredSkillName);
+
+  if (!skillData || typeof skillData !== "object") {
+    console.log("SKILL RESOLVE FAILED -> fallback to Slash", {
+      attacker: attacker.display_name,
+      desiredSkillName
+    });
+    skillData = getSkillData("Slash");
+  }
+
+  const resolvedSkillName = String(
+    skillData.name || desiredSkillName || "Slash"
+  ).trim();
+
   let skillCost = Number(skillData.cost || 0);
+  const normalizedSkillType = String(skillData.type || "Offensive").trim().toLowerCase();
 
   if (Number(attacker.ap || 0) < skillCost) {
+    console.log("NOT ENOUGH AP FOR SKILL -> fallback to Slash", {
+      attacker: attacker.display_name,
+      desiredSkillName,
+      resolvedSkillName,
+      attackerAp: Number(attacker.ap || 0),
+      skillCost
+    });
+
     skillData = getSkillData("Slash");
-    resolvedSkillName = "Slash";
     skillCost = Number(skillData.cost || 0);
   }
 
+  const finalSkillName = String(
+    skillData.name || (skillData === getSkillData("Slash") ? "Slash" : desiredSkillName) || "Slash"
+  ).trim();
+
+  const finalSkillType = String(skillData.type || "Offensive").trim().toLowerCase();
+
   if (Number(attacker.ap || 0) < skillCost) {
     attacker.sequence_index = Number(attacker.sequence_index || 0) + 1;
+
     return {
       ok: true,
       type: "skip",
       attacker_id: attacker.unit_id,
       attacker_name: attacker.display_name,
-      skill_name: resolvedSkillName,
+      skill_name: finalSkillName,
+      attacker_ap_before: Number(attacker.ap || 0),
       attacker_ap_after: Number(attacker.ap || 0),
       reason: "not_enough_ap"
     };
@@ -1792,25 +1791,30 @@ function performUnitAction(attackerParty, defenderParty, attackerIndex) {
   attacker.ap = Math.max(attackerApBefore - skillCost, 0);
   const attackerApAfter = Number(attacker.ap || 0);
 
-  if (String(skillData.type || "Offensive") === "Defensive") {
+  if (finalSkillType === "defensive") {
     const defensiveEffect = applyDefensiveSkill(attacker, skillData);
-    attacker.last_skill_used = resolvedSkillName;
+
+    attacker.last_skill_used = finalSkillName;
     attacker.sequence_index = Number(attacker.sequence_index || 0) + 1;
-    applySkillCooldown(attacker, resolvedSkillName, skillData);
+    applySkillCooldown(attacker, finalSkillName, skillData);
 
     return {
       ok: true,
       type: "defensive",
       attacker_id: attacker.unit_id,
       attacker_name: attacker.display_name,
-      skill_name: resolvedSkillName,
+      skill_name: finalSkillName,
       attacker_ap_before: attackerApBefore,
       attacker_ap_after: attackerApAfter,
       result: defensiveEffect
     };
   }
 
-  const targetIndex = findTargetIndex(defenderParty, attacker.target_strategy || "first_alive");
+  const targetIndex = findTargetIndex(
+    defenderParty,
+    attacker.target_strategy || "first_alive"
+  );
+
   if (targetIndex === -1) {
     attacker.last_skill_used = "";
     attacker.sequence_index = Number(attacker.sequence_index || 0) + 1;
@@ -1820,7 +1824,7 @@ function performUnitAction(attackerParty, defenderParty, attackerIndex) {
       type: "skip",
       attacker_id: attacker.unit_id,
       attacker_name: attacker.display_name,
-      skill_name: resolvedSkillName,
+      skill_name: finalSkillName,
       attacker_ap_before: attackerApBefore,
       attacker_ap_after: attackerApAfter,
       reason: "no_target"
@@ -1829,7 +1833,10 @@ function performUnitAction(attackerParty, defenderParty, attackerIndex) {
 
   const defender = defenderParty[targetIndex];
   const damageResult = calculateDamageResult(attacker, defender, skillData);
-  const finalDamage = applyDefensiveReduction(defender, Number(damageResult.mitigated_damage || 0));
+  const finalDamage = applyDefensiveReduction(
+    defender,
+    Number(damageResult.mitigated_damage || 0)
+  );
 
   defender.hp = Math.max(Number(defender.hp || 0) - finalDamage, 0);
   defender.is_alive = defender.hp > 0;
@@ -1838,19 +1845,22 @@ function performUnitAction(attackerParty, defenderParty, attackerIndex) {
   const lifestealPercent = Number(attacker.lifesteal || 0);
   if (lifestealPercent > 0 && finalDamage > 0) {
     const healAmount = Math.floor(finalDamage * (lifestealPercent / 100.0));
-    attacker.hp = Math.min(Number(attacker.hp || 0) + healAmount, Number(attacker.max_hp || 0));
+    attacker.hp = Math.min(
+      Number(attacker.hp || 0) + healAmount,
+      Number(attacker.max_hp || 0)
+    );
   }
 
-  attacker.last_skill_used = resolvedSkillName;
+  attacker.last_skill_used = finalSkillName;
   attacker.sequence_index = Number(attacker.sequence_index || 0) + 1;
-  applySkillCooldown(attacker, resolvedSkillName, skillData);
+  applySkillCooldown(attacker, finalSkillName, skillData);
 
   return {
     ok: true,
     type: "offensive",
     attacker_id: attacker.unit_id,
     attacker_name: attacker.display_name,
-    skill_name: resolvedSkillName,
+    skill_name: finalSkillName,
     attacker_ap_before: attackerApBefore,
     attacker_ap_after: attackerApAfter,
     target_id: defender.unit_id,
