@@ -1511,90 +1511,169 @@ const SKILL_REGISTRY = {
   "Slash": {
     name: "Slash",
     type: "Offensive",
-    cost: 10,
-    cooldown: 2,
+    rank: 1,
+    cost: 5,
+    damage: 5,
     flat_bonus: 0,
-    multiplier: 1.0
-  },
-
-  "Block": {
-    name: "Block",
-    type: "Defensive",
-    cost: 8,
-    cooldown: 2
+    multiplier: 1.0,
+    cooldown: 0,
+    description: "A basic sword slash that deals direct damage."
   },
 
   "Intercept": {
     name: "Intercept",
     type: "Defensive",
-    cost: 10,
-    cooldown: 2
+    rank: 1,
+    cost: 4,
+    damage: 0,
+    flat_bonus: 0,
+    multiplier: 1.0,
+    cooldown: 2,
+    description: "Reduces the next incoming hit by 35%."
+  },
+
+  "Precision Hit": {
+    name: "Precision Hit",
+    type: "Offensive",
+    rank: 1,
+    cost: 6,
+    damage: 0,
+    flat_bonus: 4,
+    multiplier: 1.2,
+    cooldown: 1,
+    description: "A precise strike aimed at weak points."
+  },
+
+  "Impale": {
+    name: "Impale",
+    type: "Offensive",
+    rank: 1,
+    cost: 8,
+    damage: 0,
+    flat_bonus: 8,
+    multiplier: 1.35,
+    cooldown: 2,
+    description: "A strong piercing attack."
+  },
+
+  "Final Thrust": {
+    name: "Final Thrust",
+    type: "Offensive",
+    rank: 1,
+    cost: 8,
+    damage: 0,
+    flat_bonus: 10,
+    multiplier: 1.45,
+    cooldown: 2,
+    description: "A decisive finishing thrust."
+  },
+
+  "Block": {
+    name: "Block",
+    type: "Defensive",
+    rank: 1,
+    cost: 4,
+    damage: 0,
+    flat_bonus: 0,
+    multiplier: 1.0,
+    cooldown: 2,
+    description: "Raises defense against the next incoming hit."
   },
 
   "Guard Stance": {
     name: "Guard Stance",
     type: "Defensive",
-    cost: 10,
-    cooldown: 2
+    rank: 1,
+    cost: 6,
+    damage: 0,
+    flat_bonus: 0,
+    multiplier: 1.0,
+    cooldown: 2,
+    description: "Assumes a guarded stance for sustained damage reduction."
   },
 
   "Furnace Bite": {
     name: "Furnace Bite",
     type: "Offensive",
-    cost: 10,
+    rank: 1,
+    cost: 8,
+    damage: 0,
+    flat_bonus: 4,
+    multiplier: 1.2,
     cooldown: 1,
-    flat_bonus: 8,
-    multiplier: 1.25
+    description: "A savage burning bite from a furnace hound."
   },
 
   "CinderSlash": {
     name: "CinderSlash",
     type: "Offensive",
+    rank: 1,
     cost: 8,
-    cooldown: 1,
+    damage: 0,
     flat_bonus: 6,
-    multiplier: 1.15
+    multiplier: 1.15,
+    cooldown: 1,
+    description: "A burning slash from a cinder footman."
   },
 
   "Ashen Guard": {
     name: "Ashen Guard",
     type: "Defensive",
-    cost: 9,
-    cooldown: 2
+    rank: 1,
+    cost: 8,
+    damage: 0,
+    flat_bonus: 0,
+    multiplier: 1.0,
+    cooldown: 1,
+    description: "Wraps the user in ash to reduce incoming damage."
   },
 
   "Bastion Stance": {
     name: "Bastion Stance",
     type: "Defensive",
+    rank: 1,
     cost: 10,
-    cooldown: 2
+    damage: 0,
+    flat_bonus: 0,
+    multiplier: 1.0,
+    cooldown: 2,
+    description: "A fortified stance used by bastion defenders."
   },
 
   "Halberd Thrust": {
     name: "Halberd Thrust",
     type: "Offensive",
+    rank: 1,
     cost: 12,
-    cooldown: 2,
+    damage: 0,
     flat_bonus: 10,
-    multiplier: 1.35
+    multiplier: 1.35,
+    cooldown: 2,
+    description: "A disciplined halberd thrust aimed at vulnerable targets."
   },
 
   "Pyre Shot": {
     name: "Pyre Shot",
     type: "Offensive",
+    rank: 1,
     cost: 10,
-    cooldown: 1,
+    damage: 0,
     flat_bonus: 8,
-    multiplier: 1.2
+    multiplier: 1.2,
+    cooldown: 1,
+    description: "A burning shot fired from the rear line."
   },
 
   "Scorch Volley": {
     name: "Scorch Volley",
     type: "Offensive",
+    rank: 1,
     cost: 14,
-    cooldown: 3,
+    damage: 0,
     flat_bonus: 14,
-    multiplier: 1.45
+    multiplier: 1.45,
+    cooldown: 3,
+    description: "A coordinated volley of scorching projectiles."
   }
 };
 
@@ -1708,7 +1787,7 @@ function applyDefensiveReduction(defender, incomingDamage) {
 }
 
 function applyDefensiveSkill(unit, skillData) {
-  const skillName = String(skillData.name || "");
+  const skillName = String(skillData.name || "").trim();
 
   if (skillName === "Block") {
     unit.block_active = true;
@@ -1722,8 +1801,14 @@ function applyDefensiveSkill(unit, skillData) {
     return "intercept";
   }
 
-  if (skillName === "Guard Stance") {
+  if (
+    skillName === "Guard Stance" ||
+    skillName === "Bastion Stance" ||
+    skillName === "Ashen Guard"
+  ) {
     unit.guard_stance_turns = 2;
+    unit.block_active = false;
+    unit.intercept_active = false;
     return "guard_stance";
   }
 
@@ -1735,52 +1820,24 @@ function performUnitAction(attackerParty, defenderParty, attackerIndex) {
   if (!attacker || !isUnitAlive(attacker)) return null;
 
   const desiredSkillName = String(getNextSkillName(attacker) || "Slash").trim();
-
   let skillData = resolveSkillForUse(attacker, desiredSkillName);
-
-  if (!skillData || typeof skillData !== "object") {
-    console.log("SKILL RESOLVE FAILED -> fallback to Slash", {
-      attacker: attacker.display_name,
-      desiredSkillName
-    });
-    skillData = getSkillData("Slash");
-  }
-
-  const resolvedSkillName = String(
-    skillData.name || desiredSkillName || "Slash"
-  ).trim();
-
+  let resolvedSkillName = String(skillData.name || desiredSkillName || "Slash").trim();
   let skillCost = Number(skillData.cost || 0);
-  const normalizedSkillType = String(skillData.type || "Offensive").trim().toLowerCase();
 
   if (Number(attacker.ap || 0) < skillCost) {
-    console.log("NOT ENOUGH AP FOR SKILL -> fallback to Slash", {
-      attacker: attacker.display_name,
-      desiredSkillName,
-      resolvedSkillName,
-      attackerAp: Number(attacker.ap || 0),
-      skillCost
-    });
-
     skillData = getSkillData("Slash");
+    resolvedSkillName = "Slash";
     skillCost = Number(skillData.cost || 0);
   }
 
-  const finalSkillName = String(
-    skillData.name || (skillData === getSkillData("Slash") ? "Slash" : desiredSkillName) || "Slash"
-  ).trim();
-
-  const finalSkillType = String(skillData.type || "Offensive").trim().toLowerCase();
-
   if (Number(attacker.ap || 0) < skillCost) {
     attacker.sequence_index = Number(attacker.sequence_index || 0) + 1;
-
     return {
       ok: true,
       type: "skip",
       attacker_id: attacker.unit_id,
       attacker_name: attacker.display_name,
-      skill_name: finalSkillName,
+      skill_name: resolvedSkillName,
       attacker_ap_before: Number(attacker.ap || 0),
       attacker_ap_after: Number(attacker.ap || 0),
       reason: "not_enough_ap"
@@ -1791,30 +1848,25 @@ function performUnitAction(attackerParty, defenderParty, attackerIndex) {
   attacker.ap = Math.max(attackerApBefore - skillCost, 0);
   const attackerApAfter = Number(attacker.ap || 0);
 
-  if (finalSkillType === "defensive") {
+  if (String(skillData.type || "Offensive").trim() === "Defensive") {
     const defensiveEffect = applyDefensiveSkill(attacker, skillData);
-
-    attacker.last_skill_used = finalSkillName;
+    attacker.last_skill_used = resolvedSkillName;
     attacker.sequence_index = Number(attacker.sequence_index || 0) + 1;
-    applySkillCooldown(attacker, finalSkillName, skillData);
+    applySkillCooldown(attacker, resolvedSkillName, skillData);
 
     return {
       ok: true,
       type: "defensive",
       attacker_id: attacker.unit_id,
       attacker_name: attacker.display_name,
-      skill_name: finalSkillName,
+      skill_name: resolvedSkillName,
       attacker_ap_before: attackerApBefore,
       attacker_ap_after: attackerApAfter,
       result: defensiveEffect
     };
   }
 
-  const targetIndex = findTargetIndex(
-    defenderParty,
-    attacker.target_strategy || "first_alive"
-  );
-
+  const targetIndex = findTargetIndex(defenderParty, attacker.target_strategy || "first_alive");
   if (targetIndex === -1) {
     attacker.last_skill_used = "";
     attacker.sequence_index = Number(attacker.sequence_index || 0) + 1;
@@ -1824,7 +1876,7 @@ function performUnitAction(attackerParty, defenderParty, attackerIndex) {
       type: "skip",
       attacker_id: attacker.unit_id,
       attacker_name: attacker.display_name,
-      skill_name: finalSkillName,
+      skill_name: resolvedSkillName,
       attacker_ap_before: attackerApBefore,
       attacker_ap_after: attackerApAfter,
       reason: "no_target"
@@ -1833,10 +1885,7 @@ function performUnitAction(attackerParty, defenderParty, attackerIndex) {
 
   const defender = defenderParty[targetIndex];
   const damageResult = calculateDamageResult(attacker, defender, skillData);
-  const finalDamage = applyDefensiveReduction(
-    defender,
-    Number(damageResult.mitigated_damage || 0)
-  );
+  const finalDamage = applyDefensiveReduction(defender, Number(damageResult.mitigated_damage || 0));
 
   defender.hp = Math.max(Number(defender.hp || 0) - finalDamage, 0);
   defender.is_alive = defender.hp > 0;
@@ -1845,22 +1894,19 @@ function performUnitAction(attackerParty, defenderParty, attackerIndex) {
   const lifestealPercent = Number(attacker.lifesteal || 0);
   if (lifestealPercent > 0 && finalDamage > 0) {
     const healAmount = Math.floor(finalDamage * (lifestealPercent / 100.0));
-    attacker.hp = Math.min(
-      Number(attacker.hp || 0) + healAmount,
-      Number(attacker.max_hp || 0)
-    );
+    attacker.hp = Math.min(Number(attacker.hp || 0) + healAmount, Number(attacker.max_hp || 0));
   }
 
-  attacker.last_skill_used = finalSkillName;
+  attacker.last_skill_used = resolvedSkillName;
   attacker.sequence_index = Number(attacker.sequence_index || 0) + 1;
-  applySkillCooldown(attacker, finalSkillName, skillData);
+  applySkillCooldown(attacker, resolvedSkillName, skillData);
 
   return {
     ok: true,
     type: "offensive",
     attacker_id: attacker.unit_id,
     attacker_name: attacker.display_name,
-    skill_name: finalSkillName,
+    skill_name: resolvedSkillName,
     attacker_ap_before: attackerApBefore,
     attacker_ap_after: attackerApAfter,
     target_id: defender.unit_id,
