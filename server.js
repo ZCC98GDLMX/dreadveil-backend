@@ -1515,19 +1515,13 @@ function buildRoundActionQueue(combat) {
 
   for (let i = 0; i < combat.player_units.length; i++) {
     if (isUnitAlive(combat.player_units[i])) {
-      queue.push({
-        side: "players",
-        attackerIndex: i
-      });
+      queue.push({ side: "players", attackerIndex: i });
     }
   }
 
   for (let i = 0; i < combat.enemy_units.length; i++) {
     if (isUnitAlive(combat.enemy_units[i])) {
-      queue.push({
-        side: "enemies",
-        attackerIndex: i
-      });
+      queue.push({ side: "enemies", attackerIndex: i });
     }
   }
 
