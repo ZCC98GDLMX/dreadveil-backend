@@ -923,6 +923,24 @@ Furnace_Hound: [
   return JSON.parse(JSON.stringify(group));
 }
 
+function sanitizeCombatUnit(unit) {
+  const hp = Math.max(0, Number(unit?.hp || 0));
+  const maxHp = Math.max(1, Number(unit?.max_hp || 1));
+  const ap = Math.max(0, Number(unit?.ap || 0));
+  const maxAp = Math.max(0, Number(unit?.max_ap || 0));
+  const isAlive = hp > 0;
+
+  return {
+    ...unit,
+    hp,
+    max_hp: maxHp,
+    ap,
+    max_ap: maxAp,
+    alive: isAlive,
+    is_alive: isAlive
+  };
+}
+
 function sanitizeCombatState(combat) {
   return {
     combat_id: combat.combat_id,
@@ -933,8 +951,8 @@ function sanitizeCombatState(combat) {
     round: combat.round,
     turn_phase: combat.turn_phase,
     started_by: combat.started_by,
-    player_units: combat.player_units,
-    enemy_units: combat.enemy_units
+    player_units: (combat.player_units || []).map(sanitizeCombatUnit),
+    enemy_units: (combat.enemy_units || []).map(sanitizeCombatUnit)
   };
 }
 
@@ -1496,17 +1514,21 @@ function buildRoundActionQueue(combat) {
   const queue = [];
 
   for (let i = 0; i < combat.player_units.length; i++) {
-    queue.push({
-      side: "players",
-      attackerIndex: i
-    });
+    if (isUnitAlive(combat.player_units[i])) {
+      queue.push({
+        side: "players",
+        attackerIndex: i
+      });
+    }
   }
 
   for (let i = 0; i < combat.enemy_units.length; i++) {
-    queue.push({
-      side: "enemies",
-      attackerIndex: i
-    });
+    if (isUnitAlive(combat.enemy_units[i])) {
+      queue.push({
+        side: "enemies",
+        attackerIndex: i
+      });
+    }
   }
 
   return queue;
