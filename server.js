@@ -771,6 +771,60 @@ function buildEncounterRewards(encounterId, tileId) {
         gems: 0,
         drops: [],
         mission_tags: ["cinder_footman_kill"]
+      },
+
+      Bastion_Halberdier: {
+        xp: 180,
+        gold: 95,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "bastion_shard",
+            name: "Bastion Shard",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/BastionShard.png"
+          }
+        ],
+        mission_tags: ["bastion_halberdier_kill"]
+      },
+
+      Pyre_Archer: {
+        xp: 190,
+        gold: 105,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "charred_arrowhead",
+            name: "Charred Arrowhead",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/CharredArrowhead.png"
+          }
+        ],
+        mission_tags: ["pyre_archer_kill"]
+      },
+
+      Ashen_Chaplain: {
+        xp: 210,
+        gold: 115,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "ashen_reliquary_fragment",
+            name: "Ashen Reliquary Fragment",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/AshenReliquaryFragment.png"
+          }
+        ],
+        mission_tags: ["ashen_chaplain_kill"]
       }
     }
   };
@@ -809,9 +863,9 @@ function buildEnemyCombatGroup(encounterId, tileId) {
           defense_bonus: 26,
           armor_penetration: 6,
           lifesteal: 0,
-          attack_sequence: ["Slash"],
+          attack_sequence: ["CinderSlash", "Ashen Guard"],
           target_strategy: "first_alive",
-          skill_cooldowns: {},
+          skill_cooldowns: createSkillCooldownMap(["CinderSlash", "Ashen Guard"]),
           sequence_index: 0,
           block_active: false,
           intercept_active: false,
@@ -831,9 +885,9 @@ function buildEnemyCombatGroup(encounterId, tileId) {
           defense_bonus: 26,
           armor_penetration: 6,
           lifesteal: 0,
-          attack_sequence: ["Slash"],
+          attack_sequence: ["CinderSlash", "Ashen Guard"],
           target_strategy: "first_alive",
-          skill_cooldowns: {},
+          skill_cooldowns: createSkillCooldownMap(["CinderSlash", "Ashen Guard"]),
           sequence_index: 0,
           block_active: false,
           intercept_active: false,
@@ -853,9 +907,9 @@ function buildEnemyCombatGroup(encounterId, tileId) {
           defense_bonus: 24,
           armor_penetration: 5,
           lifesteal: 0,
-          attack_sequence: ["Slash"],
+          attack_sequence: ["CinderSlash"],
           target_strategy: "first_alive",
-          skill_cooldowns: {},
+          skill_cooldowns: createSkillCooldownMap(["CinderSlash"]),
           sequence_index: 0,
           block_active: false,
           intercept_active: false,
@@ -865,59 +919,351 @@ function buildEnemyCombatGroup(encounterId, tileId) {
         }
       ],
 
-Furnace_Hound: [
-  {
-    unit_id: "enemy_furnace_hound_a",
-    unit_type: "enemy",
-    display_name: "Furnace Hound A",
-    hp: 420,
-    max_hp: 420,
-    ap: 130,
-    max_ap: 130,
-    damage_bonus: 34,
-    defense_bonus: 18,
-    armor_penetration: 11,
-    lifesteal: 0,
-    attack_sequence: ["Furnace Bite", "Intercept"],
-    target_strategy: "lowest_hp",
-    skill_cooldowns: createSkillCooldownMap(["Furnace Bite", "Intercept"]),
-    sequence_index: 0,
-    block_active: false,
-    intercept_active: false,
-    guard_stance_turns: 0,
-    last_skill_used: "",
-    is_alive: true
-  },
-  {
-    unit_id: "enemy_furnace_hound_b",
-    unit_type: "enemy",
-    display_name: "Furnace Hound B",
-    hp: 420,
-    max_hp: 420,
-    ap: 130,
-    max_ap: 130,
-    damage_bonus: 34,
-    defense_bonus: 18,
-    armor_penetration: 11,
-    lifesteal: 0,
-    attack_sequence: ["Furnace Bite", "Intercept"],
-    target_strategy: "lowest_hp",
-    skill_cooldowns: createSkillCooldownMap(["Furnace Bite", "Intercept"]),
-    sequence_index: 0,
-    block_active: false,
-    intercept_active: false,
-    guard_stance_turns: 0,
-    last_skill_used: "",
-    is_alive: true
-  }
-]
-}
-};
+      Bastion_Halberdier: [
+        {
+          unit_id: "enemy_bastion_halberdier_a",
+          unit_type: "enemy",
+          display_name: "Bastion Halberdier A",
+          hp: 620,
+          max_hp: 620,
+          ap: 130,
+          max_ap: 130,
+          damage_bonus: 32,
+          defense_bonus: 34,
+          armor_penetration: 10,
+          lifesteal: 0,
+          attack_sequence: ["Bastion Stance", "Halberd Thrust"],
+          target_strategy: "lowest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Bastion Stance", "Halberd Thrust"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_bastion_halberdier_b",
+          unit_type: "enemy",
+          display_name: "Bastion Halberdier B",
+          hp: 620,
+          max_hp: 620,
+          ap: 130,
+          max_ap: 130,
+          damage_bonus: 32,
+          defense_bonus: 34,
+          armor_penetration: 10,
+          lifesteal: 0,
+          attack_sequence: ["Bastion Stance", "Halberd Thrust"],
+          target_strategy: "lowest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Bastion Stance", "Halberd Thrust"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_bastion_squire",
+          unit_type: "enemy",
+          display_name: "Bastion Squire",
+          hp: 460,
+          max_hp: 460,
+          ap: 115,
+          max_ap: 115,
+          damage_bonus: 24,
+          defense_bonus: 24,
+          armor_penetration: 6,
+          lifesteal: 0,
+          attack_sequence: ["Block", "Slash"],
+          target_strategy: "first_alive",
+          skill_cooldowns: createSkillCooldownMap(["Block", "Slash"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        }
+      ],
 
-  const tileEncounters = encounters[tileId];
-  if (!tileEncounters) return [];
+      Pyre_Archer: [
+        {
+          unit_id: "enemy_pyre_archer_a",
+          unit_type: "enemy",
+          display_name: "Pyre Archer A",
+          hp: 400,
+          max_hp: 400,
+          ap: 135,
+          max_ap: 135,
+          damage_bonus: 36,
+          defense_bonus: 16,
+          armor_penetration: 12,
+          lifesteal: 0,
+          attack_sequence: ["Pyre Shot", "Scorch Volley"],
+          target_strategy: "lowest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Pyre Shot", "Scorch Volley"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_pyre_archer_b",
+          unit_type: "enemy",
+          display_name: "Pyre Archer B",
+          hp: 400,
+          max_hp: 400,
+          ap: 135,
+          max_ap: 135,
+          damage_bonus: 36,
+          defense_bonus: 16,
+          armor_penetration: 12,
+          lifesteal: 0,
+          attack_sequence: ["Pyre Shot", "Scorch Volley"],
+          target_strategy: "lowest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Pyre Shot", "Scorch Volley"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_cinder_guard_a",
+          unit_type: "enemy",
+          display_name: "Cinder Guard A",
+          hp: 520,
+          max_hp: 520,
+          ap: 120,
+          max_ap: 120,
+          damage_bonus: 26,
+          defense_bonus: 28,
+          armor_penetration: 7,
+          lifesteal: 0,
+          attack_sequence: ["Block", "Slash"],
+          target_strategy: "first_alive",
+          skill_cooldowns: createSkillCooldownMap(["Block", "Slash"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_cinder_guard_b",
+          unit_type: "enemy",
+          display_name: "Cinder Guard B",
+          hp: 520,
+          max_hp: 520,
+          ap: 120,
+          max_ap: 120,
+          damage_bonus: 26,
+          defense_bonus: 28,
+          armor_penetration: 7,
+          lifesteal: 0,
+          attack_sequence: ["Block", "Slash"],
+          target_strategy: "first_alive",
+          skill_cooldowns: createSkillCooldownMap(["Block", "Slash"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        }
+      ],
 
-  const group = tileEncounters[encounterId];
+      Ashen_Chaplain: [
+        {
+          unit_id: "enemy_ashen_chaplain",
+          unit_type: "enemy",
+          display_name: "Ashen Chaplain",
+          hp: 500,
+          max_hp: 500,
+          ap: 140,
+          max_ap: 140,
+          damage_bonus: 22,
+          defense_bonus: 24,
+          armor_penetration: 6,
+          lifesteal: 0,
+          attack_sequence: ["Ashen Guard", "Guard Stance"],
+          target_strategy: "first_alive",
+          skill_cooldowns: createSkillCooldownMap(["Ashen Guard", "Guard Stance"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_chaplain_guard_a",
+          unit_type: "enemy",
+          display_name: "Chaplain Guard A",
+          hp: 560,
+          max_hp: 560,
+          ap: 120,
+          max_ap: 120,
+          damage_bonus: 28,
+          defense_bonus: 30,
+          armor_penetration: 8,
+          lifesteal: 0,
+          attack_sequence: ["Slash", "Block"],
+          target_strategy: "first_alive",
+          skill_cooldowns: createSkillCooldownMap(["Slash", "Block"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_chaplain_guard_b",
+          unit_type: "enemy",
+          display_name: "Chaplain Guard B",
+          hp: 560,
+          max_hp: 560,
+          ap: 120,
+          max_ap: 120,
+          damage_bonus: 28,
+          defense_bonus: 30,
+          armor_penetration: 8,
+          lifesteal: 0,
+          attack_sequence: ["Slash", "Block"],
+          target_strategy: "first_alive",
+          skill_cooldowns: createSkillCooldownMap(["Slash", "Block"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_chaplain_guard_c",
+          unit_type: "enemy",
+          display_name: "Chaplain Guard C",
+          hp: 500,
+          max_hp: 500,
+          ap: 115,
+          max_ap: 115,
+          damage_bonus: 26,
+          defense_bonus: 28,
+          armor_penetration: 7,
+          lifesteal: 0,
+          attack_sequence: ["Slash"],
+          target_strategy: "first_alive",
+          skill_cooldowns: createSkillCooldownMap(["Slash"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        }
+      ],
+
+      Furnace_Hound: [
+        {
+          unit_id: "enemy_furnace_hound_a",
+          unit_type: "enemy",
+          display_name: "Furnace Hound A",
+          hp: 420,
+          max_hp: 420,
+          ap: 130,
+          max_ap: 130,
+          damage_bonus: 34,
+          defense_bonus: 18,
+          armor_penetration: 11,
+          lifesteal: 0,
+          attack_sequence: ["Furnace Bite", "Intercept"],
+          target_strategy: "lowest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Furnace Bite", "Intercept"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_furnace_hound_b",
+          unit_type: "enemy",
+          display_name: "Furnace Hound B",
+          hp: 420,
+          max_hp: 420,
+          ap: 130,
+          max_ap: 130,
+          damage_bonus: 34,
+          defense_bonus: 18,
+          armor_penetration: 11,
+          lifesteal: 0,
+          attack_sequence: ["Furnace Bite", "Intercept"],
+          target_strategy: "lowest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Furnace Bite", "Intercept"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_furnace_hound_c",
+          unit_type: "enemy",
+          display_name: "Furnace Hound C",
+          hp: 420,
+          max_hp: 420,
+          ap: 130,
+          max_ap: 130,
+          damage_bonus: 34,
+          defense_bonus: 18,
+          armor_penetration: 11,
+          lifesteal: 0,
+          attack_sequence: ["Furnace Bite", "Intercept"],
+          target_strategy: "lowest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Furnace Bite", "Intercept"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_furnace_hound_alpha",
+          unit_type: "enemy",
+          display_name: "Furnace Hound Alpha",
+          hp: 520,
+          max_hp: 520,
+          ap: 140,
+          max_ap: 140,
+          damage_bonus: 40,
+          defense_bonus: 20,
+          armor_penetration: 13,
+          lifesteal: 0,
+          attack_sequence: ["Furnace Bite", "Intercept"],
+          target_strategy: "lowest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Furnace Bite", "Intercept"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        }
+      ]
+    }
+  };
+
+  const group = encounters?.[tileId]?.[encounterId];
   if (!group) return [];
 
   return JSON.parse(JSON.stringify(group));
@@ -1168,7 +1514,7 @@ const SKILL_REGISTRY = {
     cost: 5,
     damage: 5,
     flat_bonus: 0,
-    multiplier: 1.0,
+    multiplier: 1.0,  
     cooldown: 0
   },
 
@@ -1231,7 +1577,55 @@ const SKILL_REGISTRY = {
     flat_bonus: 4,
     multiplier: 1.20,
     cooldown: 1
-  }
+  },
+
+  "Bastion Stance": {
+  type: "defensive",
+  cost: 10,
+  cooldown: 2,
+  flat_reduction: 0,
+  reduction_multiplier: 0.25
+},
+
+"Halberd Thrust": {
+  type: "offensive",
+  cost: 12,
+  cooldown: 2,
+  flat_bonus: 10,
+  multiplier: 1.35
+},
+
+"CinderSlash": {
+  type: "offensive",
+  cost: 8,
+  cooldown: 1,
+  flat_bonus: 6,
+  multiplier: 1.15
+},
+
+"Ashen Guard": {
+  type: "defensive",
+  cost: 9,
+  cooldown: 2,
+  flat_reduction: 0,
+  reduction_multiplier: 0.20
+},
+
+"Pyre Shot": {
+  type: "offensive",
+  cost: 10,
+  cooldown: 1,
+  flat_bonus: 8,
+  multiplier: 1.20
+},
+
+"Scorch Volley": {
+  type: "offensive",
+  cost: 14,
+  cooldown: 3,
+  flat_bonus: 14,
+  multiplier: 1.45
+}
 };
 
 function getSkillData(skillName) {
