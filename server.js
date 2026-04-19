@@ -1386,12 +1386,17 @@ function performUnitAction(attackerParty, defenderParty, attackerIndex) {
     return {
       ok: true,
       type: "skip",
+      attacker_id: attacker.unit_id,
       attacker_name: attacker.display_name,
+      skill_name: resolvedSkillName,
+      attacker_ap_after: Number(attacker.ap || 0),
       reason: "not_enough_ap"
     };
   }
 
-  attacker.ap = Math.max(Number(attacker.ap || 0) - skillCost, 0);
+  const attackerApBefore = Number(attacker.ap || 0);
+  attacker.ap = Math.max(attackerApBefore - skillCost, 0);
+  const attackerApAfter = Number(attacker.ap || 0);
 
   if (String(skillData.type || "Offensive") === "Defensive") {
     const defensiveEffect = applyDefensiveSkill(attacker, skillData);
@@ -1402,8 +1407,11 @@ function performUnitAction(attackerParty, defenderParty, attackerIndex) {
     return {
       ok: true,
       type: "defensive",
+      attacker_id: attacker.unit_id,
       attacker_name: attacker.display_name,
       skill_name: resolvedSkillName,
+      attacker_ap_before: attackerApBefore,
+      attacker_ap_after: attackerApAfter,
       result: defensiveEffect
     };
   }
@@ -1412,7 +1420,17 @@ function performUnitAction(attackerParty, defenderParty, attackerIndex) {
   if (targetIndex === -1) {
     attacker.last_skill_used = "";
     attacker.sequence_index = Number(attacker.sequence_index || 0) + 1;
-    return null;
+
+    return {
+      ok: true,
+      type: "skip",
+      attacker_id: attacker.unit_id,
+      attacker_name: attacker.display_name,
+      skill_name: resolvedSkillName,
+      attacker_ap_before: attackerApBefore,
+      attacker_ap_after: attackerApAfter,
+      reason: "no_target"
+    };
   }
 
   const defender = defenderParty[targetIndex];
@@ -1421,6 +1439,7 @@ function performUnitAction(attackerParty, defenderParty, attackerIndex) {
 
   defender.hp = Math.max(Number(defender.hp || 0) - finalDamage, 0);
   defender.is_alive = defender.hp > 0;
+  defender.alive = defender.is_alive;
 
   const lifestealPercent = Number(attacker.lifesteal || 0);
   if (lifestealPercent > 0 && finalDamage > 0) {
@@ -1438,6 +1457,8 @@ function performUnitAction(attackerParty, defenderParty, attackerIndex) {
     attacker_id: attacker.unit_id,
     attacker_name: attacker.display_name,
     skill_name: resolvedSkillName,
+    attacker_ap_before: attackerApBefore,
+    attacker_ap_after: attackerApAfter,
     target_id: defender.unit_id,
     target_name: defender.display_name,
     damage: finalDamage,
