@@ -750,13 +750,15 @@ function buildEncounterRewards(encounterId, tileId) {
         xp: 180,
         gold: 95,
         skulls: 0,
+        gems: 0,
         drops: [
           {
             item_id: "corrupted_core",
             name: "Corrupted Core",
             quantity: 1,
             stackable: true,
-            type: "Material"
+            type: "Material",
+            icon_path: "res://art/Items/Materials/CorruptedCore.png"
           }
         ],
         mission_tags: ["furnace_hound_kill"]
@@ -766,6 +768,7 @@ function buildEncounterRewards(encounterId, tileId) {
         xp: 120,
         gold: 60,
         skulls: 0,
+        gems: 0,
         drops: [],
         mission_tags: ["cinder_footman_kill"]
       }
@@ -780,6 +783,7 @@ function buildEncounterRewards(encounterId, tileId) {
       xp: 0,
       gold: 0,
       skulls: 0,
+      gems: 0,
       drops: [],
       mission_tags: []
     };
