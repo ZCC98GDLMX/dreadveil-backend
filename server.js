@@ -136,11 +136,19 @@ function getPresenceMap(mapId) {
   return presenceByMap.get(normalizedMapId);
 }
 
-function buildPresenceEntry(playerName, mapId, position = {}) {
+function normalizeAppearancePayload(rawAppearance = {}) {
+  return {
+    visual_state: String(rawAppearance.visual_state || "").trim(),
+    pet_texture_path: String(rawAppearance.pet_texture_path || "").trim()
+  };
+}
+
+function buildPresenceEntry(playerName, mapId, position = {}, appearance = {}) {
   return {
     player_name: String(playerName || "").trim(),
     map_id: normalizeMapId(mapId),
     position: normalizePosition(position),
+    appearance: normalizeAppearancePayload(appearance),
     updated_at: new Date().toISOString()
   };
 }
@@ -154,12 +162,17 @@ function getPresenceSnapshotForMap(mapId, excludePlayerName = "") {
   const result = [];
   for (const [playerName, entry] of mapPresence.entries()) {
     if (playerName === excludePlayerName) continue;
+
     result.push({
       player_name: entry.player_name,
       map_id: entry.map_id,
       position: {
         x: Number(entry.position?.x || 0),
         y: Number(entry.position?.y || 0)
+      },
+      appearance: {
+        visual_state: String(entry.appearance?.visual_state || ""),
+        pet_texture_path: String(entry.appearance?.pet_texture_path || "")
       },
       updated_at: entry.updated_at
     });
@@ -223,7 +236,7 @@ function removePlayerFromPresence(playerName, mapId = "") {
   return null;
 }
 
-function upsertPlayerPresence(playerName, mapId, position = {}) {
+function upsertPlayerPresence(playerName, mapId, position = {}, appearance = {}) {
   const normalizedPlayerName = String(playerName || "").trim();
   const normalizedMapId = normalizeMapId(mapId);
 
@@ -234,7 +247,12 @@ function upsertPlayerPresence(playerName, mapId, position = {}) {
   removePlayerFromPresence(normalizedPlayerName);
 
   const mapPresence = getPresenceMap(normalizedMapId);
-  const entry = buildPresenceEntry(normalizedPlayerName, normalizedMapId, position);
+  const entry = buildPresenceEntry(
+    normalizedPlayerName,
+    normalizedMapId,
+    position,
+    appearance
+  );
 
   mapPresence.set(normalizedPlayerName, entry);
   return entry;
@@ -374,6 +392,7 @@ if (type === "identify") {
         const playerName = String(data.player_name || client?.player_name || "").trim();
         const mapId = normalizeMapId(data.map_id);
         const position = normalizePosition(data.position);
+        const appearance = normalizeAppearancePayload(data.appearance);
 
         if (!playerName || !mapId) {
           sendWs(ws, { type: "error", message: "Missing presence_join fields" });
@@ -385,7 +404,7 @@ if (type === "identify") {
           handlePresenceLeave(playerName, previousMapId);
         }
 
-        const entry = upsertPlayerPresence(playerName, mapId, position);
+        const entry = upsertPlayerPresence(playerName, mapId, position, appearance);
 
         client.player_name = playerName;
         client.current_map = mapId;
@@ -401,11 +420,12 @@ if (type === "identify") {
         broadcastToMap(mapId, {
           type: "player_entered_map",
           player: {
-            player_name: entry.player_name,
-            map_id: entry.map_id,
-            position: entry.position,
+             player_name: entry.player_name,
+             map_id: entry.map_id,
+             position: entry.position,
+              appearance: entry.appearance,
             updated_at: entry.updated_at
-          }
+           }
         }, playerName);
 
         return;
@@ -416,6 +436,7 @@ if (type === "identify") {
         const playerName = String(data.player_name || client?.player_name || "").trim();
         const mapId = normalizeMapId(data.map_id || client?.current_map);
         const position = normalizePosition(data.position);
+        const appearance = normalizeAppearancePayload(data.appearance);
 
         if (!playerName || !mapId) {
           sendWs(ws, { type: "error", message: "Missing presence_move fields" });
@@ -430,38 +451,48 @@ if (type === "identify") {
 
         const existingEntry = mapPresence.get(playerName);
         if (!existingEntry) {
-          const entry = upsertPlayerPresence(playerName, mapId, position);
+          const entry = upsertPlayerPresence(playerName, mapId, position, appearance);
 
-          client.current_map = mapId;
-          wsClients.set(ws, client);
+client.current_map = mapId;
+wsClients.set(ws, client);
 
-          broadcastToMap(mapId, {
-            type: "player_entered_map",
-            player: {
-              player_name: entry.player_name,
-              map_id: entry.map_id,
-              position: entry.position,
-              updated_at: entry.updated_at
-            }
-          }, playerName);
+broadcastToMap(mapId, {
+  type: "player_entered_map",
+  player: {
+    player_name: entry.player_name,
+    map_id: entry.map_id,
+    position: entry.position,
+    appearance: entry.appearance,
+    updated_at: entry.updated_at
+  }
+}, playerName);
 
-          return;
+return;
         }
 
         existingEntry.position = position;
-        existingEntry.updated_at = new Date().toISOString();
-        mapPresence.set(playerName, existingEntry);
+
+if (appearance.visual_state !== "" || appearance.pet_texture_path !== "") {
+  existingEntry.appearance = appearance;
+}
+
+existingEntry.updated_at = new Date().toISOString();
+mapPresence.set(playerName, existingEntry);
 
         client.current_map = mapId;
         wsClients.set(ws, client);
 
         broadcastToMap(mapId, {
-          type: "presence_move",
-          player_name: playerName,
-          map_id: mapId,
-          position,
-          updated_at: existingEntry.updated_at
-        }, playerName);
+  type: "presence_move",
+  player_name: playerName,
+  map_id: mapId,
+  position,
+  appearance: existingEntry.appearance || {
+    visual_state: "",
+    pet_texture_path: ""
+  },
+  updated_at: existingEntry.updated_at
+}, playerName);
 
         return;
       }
