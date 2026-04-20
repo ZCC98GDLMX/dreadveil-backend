@@ -36,10 +36,16 @@ const supabase = createClient(
 //////////////////////////////////////////////////////////////////
 
 const wsClients = new Map();
-// ws -> { player_name, party_id }
+// ws -> { player_name, party_id, current_map }
 
 const partyRooms = new Map();
 // party_id -> Set<ws>
+
+const presenceByMap = new Map();
+// map_id -> Map<player_name, { player_name, map_id, position: { x, y }, updated_at }>
+
+const playerSocketsByName = new Map();
+// player_name -> ws
 
 const combatInstances = new Map();
 // combat_id -> combat instance
@@ -108,6 +114,144 @@ function broadcastPartyStateChanged(partyId) {
   });
 }
 
+function normalizeMapId(value) {
+  return String(value || "").trim();
+}
+
+function normalizePosition(rawPosition = {}) {
+  return {
+    x: Number(rawPosition.x || 0),
+    y: Number(rawPosition.y || 0)
+  };
+}
+
+function getPresenceMap(mapId) {
+  const normalizedMapId = normalizeMapId(mapId);
+  if (!normalizedMapId) return null;
+
+  if (!presenceByMap.has(normalizedMapId)) {
+    presenceByMap.set(normalizedMapId, new Map());
+  }
+
+  return presenceByMap.get(normalizedMapId);
+}
+
+function buildPresenceEntry(playerName, mapId, position = {}) {
+  return {
+    player_name: String(playerName || "").trim(),
+    map_id: normalizeMapId(mapId),
+    position: normalizePosition(position),
+    updated_at: new Date().toISOString()
+  };
+}
+
+function getPresenceSnapshotForMap(mapId, excludePlayerName = "") {
+  const normalizedMapId = normalizeMapId(mapId);
+  const mapPresence = presenceByMap.get(normalizedMapId);
+
+  if (!mapPresence) return [];
+
+  const result = [];
+  for (const [playerName, entry] of mapPresence.entries()) {
+    if (playerName === excludePlayerName) continue;
+    result.push({
+      player_name: entry.player_name,
+      map_id: entry.map_id,
+      position: {
+        x: Number(entry.position?.x || 0),
+        y: Number(entry.position?.y || 0)
+      },
+      updated_at: entry.updated_at
+    });
+  }
+
+  return result;
+}
+
+function broadcastToMap(mapId, payload, excludePlayerName = "") {
+  const normalizedMapId = normalizeMapId(mapId);
+  if (!normalizedMapId) return;
+
+  const mapPresence = presenceByMap.get(normalizedMapId);
+  if (!mapPresence) return;
+
+  for (const [playerName] of mapPresence.entries()) {
+    if (excludePlayerName && playerName === excludePlayerName) continue;
+
+    const targetWs = playerSocketsByName.get(playerName);
+    if (!targetWs) continue;
+
+    sendWs(targetWs, payload);
+  }
+}
+
+function removePlayerFromPresence(playerName, mapId = "") {
+  const normalizedPlayerName = String(playerName || "").trim();
+  if (!normalizedPlayerName) return null;
+
+  let removedEntry = null;
+
+  if (mapId) {
+    const normalizedMapId = normalizeMapId(mapId);
+    const mapPresence = presenceByMap.get(normalizedMapId);
+
+    if (mapPresence && mapPresence.has(normalizedPlayerName)) {
+      removedEntry = mapPresence.get(normalizedPlayerName);
+      mapPresence.delete(normalizedPlayerName);
+
+      if (mapPresence.size === 0) {
+        presenceByMap.delete(normalizedMapId);
+      }
+    }
+
+    return removedEntry;
+  }
+
+  for (const [existingMapId, mapPresence] of presenceByMap.entries()) {
+    if (mapPresence.has(normalizedPlayerName)) {
+      removedEntry = mapPresence.get(normalizedPlayerName);
+      mapPresence.delete(normalizedPlayerName);
+
+      if (mapPresence.size === 0) {
+        presenceByMap.delete(existingMapId);
+      }
+
+      return removedEntry;
+    }
+  }
+
+  return null;
+}
+
+function upsertPlayerPresence(playerName, mapId, position = {}) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  const normalizedMapId = normalizeMapId(mapId);
+
+  if (!normalizedPlayerName || !normalizedMapId) {
+    return null;
+  }
+
+  removePlayerFromPresence(normalizedPlayerName);
+
+  const mapPresence = getPresenceMap(normalizedMapId);
+  const entry = buildPresenceEntry(normalizedPlayerName, normalizedMapId, position);
+
+  mapPresence.set(normalizedPlayerName, entry);
+  return entry;
+}
+
+function handlePresenceLeave(playerName, mapId = "") {
+  const removedEntry = removePlayerFromPresence(playerName, mapId);
+
+  if (!removedEntry) return;
+
+  broadcastToMap(removedEntry.map_id, {
+    type: "player_left_map",
+    player_name: removedEntry.player_name,
+    map_id: removedEntry.map_id
+  }, removedEntry.player_name);
+}
+
 async function broadcastPartySystemMessage(partyId, messageText) {
   if (!partyId || !messageText) return;
 
@@ -135,10 +279,11 @@ async function broadcastPartySystemMessage(partyId, messageText) {
 wss.on("connection", (ws) => {
   console.log("WS CONNECTED");
 
-  wsClients.set(ws, {
-    player_name: null,
-    party_id: null
-  });
+wsClients.set(ws, {
+  player_name: null,
+  party_id: null,
+  current_map: null
+});
 
   sendWs(ws, {
     type: "connected"
@@ -167,8 +312,22 @@ if (type === "identify") {
     return;
   }
 
+  const oldSocket = playerSocketsByName.get(playerName);
+  if (oldSocket && oldSocket !== ws) {
+    try {
+      sendWs(oldSocket, {
+        type: "force_disconnect",
+        reason: "New session identified for same player"
+      });
+      oldSocket.close();
+    } catch (err) {
+      console.error("FORCE DISCONNECT ERROR:", err);
+    }
+  }
+
   client.player_name = playerName;
   wsClients.set(ws, client);
+  playerSocketsByName.set(playerName, ws);
 
   const existingConfig = await getPlayerCombatConfigFromDb(playerName);
   if (!existingConfig) {
@@ -207,6 +366,129 @@ if (type === "identify") {
       // PING
       if (type === "ping") {
         sendWs(ws, { type: "pong" });
+        return;
+      }
+
+            // PRESENCE JOIN
+      if (type === "presence_join") {
+        const playerName = String(data.player_name || client?.player_name || "").trim();
+        const mapId = normalizeMapId(data.map_id);
+        const position = normalizePosition(data.position);
+
+        if (!playerName || !mapId) {
+          sendWs(ws, { type: "error", message: "Missing presence_join fields" });
+          return;
+        }
+
+        const previousMapId = String(client?.current_map || "").trim();
+        if (previousMapId && previousMapId !== mapId) {
+          handlePresenceLeave(playerName, previousMapId);
+        }
+
+        const entry = upsertPlayerPresence(playerName, mapId, position);
+
+        client.player_name = playerName;
+        client.current_map = mapId;
+        wsClients.set(ws, client);
+        playerSocketsByName.set(playerName, ws);
+
+        sendWs(ws, {
+          type: "presence_snapshot",
+          map_id: mapId,
+          players: getPresenceSnapshotForMap(mapId, playerName)
+        });
+
+        broadcastToMap(mapId, {
+          type: "player_entered_map",
+          player: {
+            player_name: entry.player_name,
+            map_id: entry.map_id,
+            position: entry.position,
+            updated_at: entry.updated_at
+          }
+        }, playerName);
+
+        return;
+      }
+
+      // PRESENCE MOVE
+      if (type === "presence_move") {
+        const playerName = String(data.player_name || client?.player_name || "").trim();
+        const mapId = normalizeMapId(data.map_id || client?.current_map);
+        const position = normalizePosition(data.position);
+
+        if (!playerName || !mapId) {
+          sendWs(ws, { type: "error", message: "Missing presence_move fields" });
+          return;
+        }
+
+        const mapPresence = getPresenceMap(mapId);
+        if (!mapPresence) {
+          sendWs(ws, { type: "error", message: "Map presence not initialized" });
+          return;
+        }
+
+        const existingEntry = mapPresence.get(playerName);
+        if (!existingEntry) {
+          const entry = upsertPlayerPresence(playerName, mapId, position);
+
+          client.current_map = mapId;
+          wsClients.set(ws, client);
+
+          broadcastToMap(mapId, {
+            type: "player_entered_map",
+            player: {
+              player_name: entry.player_name,
+              map_id: entry.map_id,
+              position: entry.position,
+              updated_at: entry.updated_at
+            }
+          }, playerName);
+
+          return;
+        }
+
+        existingEntry.position = position;
+        existingEntry.updated_at = new Date().toISOString();
+        mapPresence.set(playerName, existingEntry);
+
+        client.current_map = mapId;
+        wsClients.set(ws, client);
+
+        broadcastToMap(mapId, {
+          type: "presence_move",
+          player_name: playerName,
+          map_id: mapId,
+          position,
+          updated_at: existingEntry.updated_at
+        }, playerName);
+
+        return;
+      }
+
+      // PRESENCE LEAVE
+      if (type === "presence_leave") {
+        const playerName = String(data.player_name || client?.player_name || "").trim();
+        const mapId = normalizeMapId(data.map_id || client?.current_map);
+
+        if (!playerName) {
+          sendWs(ws, { type: "error", message: "Missing player_name" });
+          return;
+        }
+
+        handlePresenceLeave(playerName, mapId);
+
+        if (client) {
+          client.current_map = null;
+          wsClients.set(ws, client);
+        }
+
+        sendWs(ws, {
+          type: "presence_left",
+          player_name: playerName,
+          map_id: mapId
+        });
+
         return;
       }
 
@@ -410,8 +692,22 @@ if (existingCombat) {
     }
   });
 
-  ws.on("close", () => {
+    ws.on("close", () => {
     console.log("WS CLOSED");
+
+    const client = wsClients.get(ws);
+    const playerName = String(client?.player_name || "").trim();
+    const currentMap = String(client?.current_map || "").trim();
+
+    if (playerName) {
+      handlePresenceLeave(playerName, currentMap);
+
+      const mappedWs = playerSocketsByName.get(playerName);
+      if (mappedWs === ws) {
+        playerSocketsByName.delete(playerName);
+      }
+    }
+
     leavePartyRoom(ws);
     wsClients.delete(ws);
   });
