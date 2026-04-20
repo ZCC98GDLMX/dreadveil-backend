@@ -387,6 +387,90 @@ if (type === "identify") {
         return;
       }
 
+            if (type === "character_get") {
+        const playerName = String(data.player_name || client?.player_name || "").trim();
+
+        if (!playerName) {
+          sendWs(ws, { type: "error", message: "Missing player_name" });
+          return;
+        }
+
+        const character = await getOrCreatePlayerCharacter(playerName);
+        sendWs(ws, buildCharacterStatePayload(character));
+        return;
+      }
+
+            if (type === "character_gain_rewards") {
+        const playerName = String(data.player_name || client?.player_name || "").trim();
+
+        if (!playerName) {
+          sendWs(ws, { type: "error", message: "Missing player_name" });
+          return;
+        }
+
+        const addGold = Number(data.gold || 0);
+        const addGems = Number(data.gems || 0);
+        const addSkulls = Number(data.skulls || 0);
+        const addXp = Number(data.xp || 0);
+        const requestedUnlockPhase = Number(data.unlocked_knight_phase_base || 0);
+
+        const current = await getOrCreatePlayerCharacter(playerName);
+
+        const newTotalXp = Math.max(0, Number(current.player_total_xp || 0) + addXp);
+        const newLevel = calculateLevelFromTotalXp(newTotalXp);
+        const totalEarnedPoints = getTotalAttributePointsEarnedForLevel(newLevel);
+        const spentPoints = calculateSpentAttributePoints(current);
+        const availablePoints = Math.max(0, totalEarnedPoints - spentPoints);
+
+        const updated = await savePlayerCharacter(playerName, {
+          gold: Math.max(0, Number(current.gold || 0) + addGold),
+          gems: Math.max(0, Number(current.gems || 0) + addGems),
+          skulls: Math.max(0, Number(current.skulls || 0) + addSkulls),
+          player_total_xp: newTotalXp,
+          player_level: newLevel,
+          attribute_points_available: availablePoints,
+          unlocked_knight_phase_base: Math.max(
+            Number(current.unlocked_knight_phase_base || 0),
+            requestedUnlockPhase
+          )
+        });
+
+        sendWs(ws, buildCharacterStatePayload(updated));
+        return;
+      }
+
+            if (type === "character_allocate_stat") {
+        const playerName = String(data.player_name || client?.player_name || "").trim();
+        const statName = String(data.stat_name || "").trim();
+
+        if (!playerName || !statName) {
+          sendWs(ws, { type: "error", message: "Missing character_allocate_stat fields" });
+          return;
+        }
+
+        const allowedStats = new Set(["strength", "vitality", "defense_stat", "action_points_stat"]);
+        if (!allowedStats.has(statName)) {
+          sendWs(ws, { type: "error", message: "Invalid stat_name" });
+          return;
+        }
+
+        const current = await getOrCreatePlayerCharacter(playerName);
+
+        if (Number(current.attribute_points_available || 0) <= 0) {
+          sendWs(ws, { type: "error", message: "No attribute points available" });
+          return;
+        }
+
+        const patch = {};
+        patch[statName] = Number(current[statName] || 0) + 1;
+        patch.attribute_points_available = Number(current.attribute_points_available || 0) - 1;
+
+        const updated = await savePlayerCharacter(playerName, patch);
+        sendWs(ws, buildCharacterStatePayload(updated));
+        return;
+      }
+
+
             // PRESENCE JOIN
       if (type === "presence_join") {
         const playerName = String(data.player_name || client?.player_name || "").trim();
@@ -751,6 +835,153 @@ if (existingCombat) {
 function createCombatId() {
   return "combat_" + Date.now() + "_" + Math.floor(Math.random() * 100000);
 }
+
+
+function normalizeCharacterRow(row = {}, playerName = "") {
+  return {
+    player_name: String(row.player_name || playerName || "").trim(),
+    gold: Number(row.gold || 0),
+    gems: Number(row.gems || 0),
+    skulls: Number(row.skulls || 0),
+    player_level: Number(row.player_level || 1),
+    player_total_xp: Number(row.player_total_xp || 0),
+    attribute_points_available: Number(row.attribute_points_available || 0),
+    strength: Number(row.strength || 0),
+    vitality: Number(row.vitality || 0),
+    defense_stat: Number(row.defense_stat || 0),
+    action_points_stat: Number(row.action_points_stat || 0),
+    unlocked_knight_phase_base: Number(row.unlocked_knight_phase_base || 0)
+  };
+}
+
+async function getOrCreatePlayerCharacter(playerName) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  if (!normalizedPlayerName) {
+    throw new Error("Missing player_name");
+  }
+
+  const { data: existingRow, error: existingError } = await supabase
+    .from("player_characters")
+    .select("*")
+    .eq("player_name", normalizedPlayerName)
+    .maybeSingle();
+
+  if (existingError) {
+    throw existingError;
+  }
+
+  if (existingRow) {
+    return normalizeCharacterRow(existingRow, normalizedPlayerName);
+  }
+
+  const defaultRow = {
+    player_name: normalizedPlayerName,
+    gold: 0,
+    gems: 0,
+    skulls: 0,
+    player_level: 1,
+    player_total_xp: 0,
+    attribute_points_available: 0,
+    strength: 0,
+    vitality: 0,
+    defense_stat: 0,
+    action_points_stat: 0,
+    unlocked_knight_phase_base: 0
+  };
+
+  const { data: insertedRow, error: insertError } = await supabase
+    .from("player_characters")
+    .upsert(defaultRow, { onConflict: "player_name" })
+    .select("*")
+    .single();
+
+  if (insertError) {
+    throw insertError;
+  }
+
+  return normalizeCharacterRow(insertedRow, normalizedPlayerName);
+}
+
+async function savePlayerCharacter(playerName, patch = {}) {
+  const current = await getOrCreatePlayerCharacter(playerName);
+
+  const merged = {
+    ...current,
+    ...patch,
+    player_name: String(playerName || "").trim(),
+    updated_at: new Date().toISOString()
+  };
+
+  const { data: savedRow, error } = await supabase
+    .from("player_characters")
+    .upsert(merged, { onConflict: "player_name" })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return normalizeCharacterRow(savedRow, playerName);
+}
+
+function calculateLevelFromTotalXp(totalXp) {
+  const xp = Number(totalXp || 0);
+
+  if (xp >= 125000) return 20;
+  if (xp >= 114466) return 19;
+  if (xp >= 104060) return 18;
+  if (xp >= 94600) return 17;
+  if (xp >= 86000) return 16;
+  if (xp >= 78125) return 15;
+  if (xp >= 62500) return 14;
+  if (xp >= 50000) return 13;
+  if (xp >= 40000) return 12;
+  if (xp >= 32000) return 11;
+  if (xp >= 25600) return 10;
+  if (xp >= 12800) return 9;
+  if (xp >= 6400) return 8;
+  if (xp >= 3200) return 7;
+  if (xp >= 1600) return 6;
+  if (xp >= 800) return 5;
+  if (xp >= 400) return 4;
+  if (xp >= 200) return 3;
+  if (xp >= 100) return 2;
+  return 1;
+}
+
+function getTotalAttributePointsEarnedForLevel(level) {
+  const normalizedLevel = Math.max(1, Number(level || 1));
+  return Math.max(0, (normalizedLevel - 1) * 5);
+}
+
+function calculateSpentAttributePoints(character) {
+  return (
+    Number(character.strength || 0) +
+    Number(character.vitality || 0) +
+    Number(character.defense_stat || 0) +
+    Number(character.action_points_stat || 0)
+  );
+}
+
+function buildCharacterStatePayload(character) {
+  return {
+    type: "character_state",
+    player_name: character.player_name,
+    gold: Number(character.gold || 0),
+    gems: Number(character.gems || 0),
+    skulls: Number(character.skulls || 0),
+    player_level: Number(character.player_level || 1),
+    player_total_xp: Number(character.player_total_xp || 0),
+    attribute_points_available: Number(character.attribute_points_available || 0),
+    strength: Number(character.strength || 0),
+    vitality: Number(character.vitality || 0),
+    defense_stat: Number(character.defense_stat || 0),
+    action_points_stat: Number(character.action_points_stat || 0),
+    unlocked_knight_phase_base: Number(character.unlocked_knight_phase_base || 0)
+  };
+}
+
 
 //////////////////////////////////////////////////////////////////
 // 🔥 CONTINÚA TU CÓDIGO NORMAL
