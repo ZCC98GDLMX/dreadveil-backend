@@ -918,6 +918,98 @@ function buildEncounterRewards(encounterId, tileId) {
         ],
         mission_tags: ["carrion_alchemist_kill"]
       }
+    },
+
+    ct_3: {
+      Dread_Marshal: {
+        xp: 220,
+        gold: 130,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "dread_seal",
+            name: "Dread Seal",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/DreadSeal.png"
+          }
+        ],
+        mission_tags: ["dread_marshal_kill"]
+      },
+
+      Gloom_Eye: {
+        xp: 210,
+        gold: 120,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "gloom_orb",
+            name: "Gloom Orb",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/GloomOrb.png"
+          }
+        ],
+        mission_tags: ["gloom_eye_kill"]
+      },
+
+      Ruin_Butcher: {
+        xp: 215,
+        gold: 125,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "butcher_hook",
+            name: "Butcher Hook",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/ButcherHook.png"
+          }
+        ],
+        mission_tags: ["ruin_butcher_kill"]
+      },
+
+      Catacomb_Beast: {
+        xp: 225,
+        gold: 135,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "catacomb_fang",
+            name: "Catacomb Fang",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/CatacombFang.png"
+          }
+        ],
+        mission_tags: ["catacomb_beast_kill"]
+      },
+
+      Warden_Exarch: {
+        xp: 260,
+        gold: 160,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "exarch_emblem",
+            name: "Exarch Emblem",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/ExarchEmblem.png"
+          }
+        ],
+        mission_tags: ["warden_exarch_kill"]
+      }
     }
   };
 
@@ -1677,6 +1769,353 @@ function buildEnemyCombatGroup(encounterId, tileId) {
           is_alive: true
         }
       ]
+    },
+
+    ct_3: {
+      Dread_Marshal: [
+        {
+          unit_id: "enemy_dread_marshal",
+          unit_type: "enemy",
+          display_name: "Dread Marshal",
+          hp: 420,
+          max_hp: 420,
+          ap: 130,
+          max_ap: 130,
+          damage_bonus: 32,
+          defense_bonus: 24,
+          armor_penetration: 8,
+          lifesteal: 0,
+          attack_sequence: ["Dread Command", "ChainSlash", "Block"],
+          target_strategy: "lowest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Dread Command", "ChainSlash", "Block"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_marshal_guard_a",
+          unit_type: "enemy",
+          display_name: "Marshal Guard A",
+          hp: 330,
+          max_hp: 330,
+          ap: 110,
+          max_ap: 110,
+          damage_bonus: 24,
+          defense_bonus: 18,
+          armor_penetration: 5,
+          lifesteal: 0,
+          attack_sequence: ["Block", "ChainSlash"],
+          target_strategy: "first_alive",
+          skill_cooldowns: createSkillCooldownMap(["Block", "ChainSlash"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_marshal_guard_b",
+          unit_type: "enemy",
+          display_name: "Marshal Guard B",
+          hp: 330,
+          max_hp: 330,
+          ap: 110,
+          max_ap: 110,
+          damage_bonus: 24,
+          defense_bonus: 18,
+          armor_penetration: 5,
+          lifesteal: 0,
+          attack_sequence: ["Block", "ChainSlash"],
+          target_strategy: "first_alive",
+          skill_cooldowns: createSkillCooldownMap(["Block", "ChainSlash"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        }
+      ],
+
+      Gloom_Eye: [
+        {
+          unit_id: "enemy_gloom_eye_a",
+          unit_type: "enemy",
+          display_name: "Gloom Eye A",
+          hp: 240,
+          max_hp: 240,
+          ap: 130,
+          max_ap: 130,
+          damage_bonus: 30,
+          defense_bonus: 12,
+          armor_penetration: 8,
+          lifesteal: 0,
+          attack_sequence: ["Gloom Ray", "Hex Bind"],
+          target_strategy: "lowest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Gloom Ray", "Hex Bind"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_gloom_eye_b",
+          unit_type: "enemy",
+          display_name: "Gloom Eye B",
+          hp: 240,
+          max_hp: 240,
+          ap: 130,
+          max_ap: 130,
+          damage_bonus: 30,
+          defense_bonus: 12,
+          armor_penetration: 8,
+          lifesteal: 0,
+          attack_sequence: ["Gloom Ray", "Hex Bind"],
+          target_strategy: "lowest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Gloom Ray", "Hex Bind"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_veil_guard",
+          unit_type: "enemy",
+          display_name: "Veil Guard",
+          hp: 320,
+          max_hp: 320,
+          ap: 110,
+          max_ap: 110,
+          damage_bonus: 24,
+          defense_bonus: 18,
+          armor_penetration: 5,
+          lifesteal: 0,
+          attack_sequence: ["Guard Stance", "ChainSlash"],
+          target_strategy: "first_alive",
+          skill_cooldowns: createSkillCooldownMap(["Guard Stance", "ChainSlash"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        }
+      ],
+
+      Ruin_Butcher: [
+        {
+          unit_id: "enemy_ruin_butcher_a",
+          unit_type: "enemy",
+          display_name: "Ruin Butcher A",
+          hp: 360,
+          max_hp: 360,
+          ap: 120,
+          max_ap: 120,
+          damage_bonus: 36,
+          defense_bonus: 16,
+          armor_penetration: 10,
+          lifesteal: 0,
+          attack_sequence: ["Reaper Cleave"],
+          target_strategy: "highest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Reaper Cleave"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_ruin_butcher_b",
+          unit_type: "enemy",
+          display_name: "Ruin Butcher B",
+          hp: 360,
+          max_hp: 360,
+          ap: 120,
+          max_ap: 120,
+          damage_bonus: 36,
+          defense_bonus: 16,
+          armor_penetration: 10,
+          lifesteal: 0,
+          attack_sequence: ["Reaper Cleave"],
+          target_strategy: "highest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Reaper Cleave"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        }
+      ],
+
+      Catacomb_Beast: [
+        {
+          unit_id: "enemy_catacomb_beast_alpha",
+          unit_type: "enemy",
+          display_name: "Catacomb Beast Alpha",
+          hp: 340,
+          max_hp: 340,
+          ap: 120,
+          max_ap: 120,
+          damage_bonus: 34,
+          defense_bonus: 15,
+          armor_penetration: 8,
+          lifesteal: 0,
+          attack_sequence: ["Reaper Cleave", "Intercept"],
+          target_strategy: "lowest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Reaper Cleave", "Intercept"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_catacomb_beast_beta",
+          unit_type: "enemy",
+          display_name: "Catacomb Beast Beta",
+          hp: 320,
+          max_hp: 320,
+          ap: 115,
+          max_ap: 115,
+          damage_bonus: 32,
+          defense_bonus: 14,
+          armor_penetration: 8,
+          lifesteal: 0,
+          attack_sequence: ["Reaper Cleave", "Intercept"],
+          target_strategy: "lowest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Reaper Cleave", "Intercept"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_catacomb_beast_gamma",
+          unit_type: "enemy",
+          display_name: "Catacomb Beast Gamma",
+          hp: 320,
+          max_hp: 320,
+          ap: 115,
+          max_ap: 115,
+          damage_bonus: 32,
+          defense_bonus: 14,
+          armor_penetration: 8,
+          lifesteal: 0,
+          attack_sequence: ["Reaper Cleave", "Intercept"],
+          target_strategy: "lowest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Reaper Cleave", "Intercept"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        }
+      ],
+
+      Warden_Exarch: [
+        {
+          unit_id: "enemy_warden_exarch",
+          unit_type: "enemy",
+          display_name: "Warden Exarch",
+          hp: 520,
+          max_hp: 520,
+          ap: 140,
+          max_ap: 140,
+          damage_bonus: 38,
+          defense_bonus: 26,
+          armor_penetration: 10,
+          lifesteal: 0,
+          attack_sequence: ["Exarch Judgment", "Crown Fall", "Block"],
+          target_strategy: "lowest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Exarch Judgment", "Crown Fall", "Block"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_exarch_guard_a",
+          unit_type: "enemy",
+          display_name: "Exarch Guard A",
+          hp: 360,
+          max_hp: 360,
+          ap: 120,
+          max_ap: 120,
+          damage_bonus: 28,
+          defense_bonus: 20,
+          armor_penetration: 6,
+          lifesteal: 0,
+          attack_sequence: ["Block", "ChainSlash"],
+          target_strategy: "first_alive",
+          skill_cooldowns: createSkillCooldownMap(["Block", "ChainSlash"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_exarch_guard_b",
+          unit_type: "enemy",
+          display_name: "Exarch Guard B",
+          hp: 360,
+          max_hp: 360,
+          ap: 120,
+          max_ap: 120,
+          damage_bonus: 28,
+          defense_bonus: 20,
+          armor_penetration: 6,
+          lifesteal: 0,
+          attack_sequence: ["Block", "ChainSlash"],
+          target_strategy: "first_alive",
+          skill_cooldowns: createSkillCooldownMap(["Block", "ChainSlash"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_exarch_eye",
+          unit_type: "enemy",
+          display_name: "Exarch Eye",
+          hp: 260,
+          max_hp: 260,
+          ap: 130,
+          max_ap: 130,
+          damage_bonus: 32,
+          defense_bonus: 12,
+          armor_penetration: 9,
+          lifesteal: 0,
+          attack_sequence: ["Gloom Ray", "Hex Bind"],
+          target_strategy: "lowest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Gloom Ray", "Hex Bind"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        }
+      ]
     }
   };
 
@@ -1684,167 +2123,6 @@ function buildEnemyCombatGroup(encounterId, tileId) {
   if (!group) return [];
 
   return JSON.parse(JSON.stringify(group));
-}
-
-function sanitizeCombatUnit(unit) {
-  const hp = Math.max(0, Number(unit?.hp || 0));
-  const maxHp = Math.max(1, Number(unit?.max_hp || 1));
-  const ap = Math.max(0, Number(unit?.ap || 0));
-  const maxAp = Math.max(0, Number(unit?.max_ap || 0));
-  const isAlive = hp > 0;
-
-  return {
-    ...unit,
-    hp,
-    max_hp: maxHp,
-    ap,
-    max_ap: maxAp,
-    alive: isAlive,
-    is_alive: isAlive
-  };
-}
-
-function sanitizeCombatState(combat) {
-  return {
-    combat_id: combat.combat_id,
-    party_id: combat.party_id,
-    tile_id: combat.tile_id,
-    encounter_id: combat.encounter_id,
-    status: combat.status,
-    round: combat.round,
-    turn_phase: combat.turn_phase,
-    started_by: combat.started_by,
-    player_units: (combat.player_units || []).map(sanitizeCombatUnit),
-    enemy_units: (combat.enemy_units || []).map(sanitizeCombatUnit)
-  };
-}
-
-function broadcastCombatState(combatId) {
-  const combat = combatInstances.get(combatId);
-  if (!combat) {
-    console.log("BROADCAST COMBAT STATE -> combat not found", combatId);
-    return;
-  }
-
-  console.log("BROADCAST COMBAT STATE ->", {
-    combatId,
-    partyId: combat.party_id,
-    round: combat.round,
-    playerCount: combat.player_units.length,
-    enemyCount: combat.enemy_units.length
-  });
-
-  broadcastToParty(combat.party_id, {
-    type: "combat_state",
-    combat: sanitizeCombatState(combat)
-  });
-}
-
-async function createPartyCombatInstance(
-  partyId,
-  encounterId,
-  tileId,
-  startedBy,
-  starterConfig = {}
-) {
-  console.log("CREATE COMBAT INSTANCE -> START", {
-    partyId,
-    encounterId,
-    tileId,
-    startedBy,
-    starterConfig
-  });
-
-  if (!partyId || !encounterId || !tileId || !startedBy) {
-    throw new Error("Missing combat creation parameters");
-  }
-
-  const { data: membersRows, error: membersError } = await supabase
-    .from("party_members")
-    .select("player_name")
-    .eq("party_id", partyId)
-    .order("joined_at", { ascending: true });
-
-  if (membersError) throw membersError;
-  if (!membersRows || membersRows.length === 0) {
-    throw new Error("Party has no members");
-  }
-
-  console.log("CREATE COMBAT INSTANCE -> membersRows", membersRows);
-
-const playerUnits = [];
-for (const row of membersRows) {
-  const memberName = row.player_name;
-  const isStarter = memberName === startedBy;
-
-  let memberCombatConfig = await getResolvedPlayerCombatConfig(memberName);
-
-  if (isStarter) {
-    const starterSequence = normalizeAttackSequence(starterConfig.attack_sequence);
-    const starterTargetStrategy = normalizeTargetStrategy(starterConfig.target_strategy);
-
-    memberCombatConfig = {
-      attack_sequence: starterSequence.length > 0
-        ? starterSequence
-        : memberCombatConfig.attack_sequence,
-      target_strategy: starterTargetStrategy || memberCombatConfig.target_strategy
-    };
-
-    await upsertPlayerCombatConfig(memberName, memberCombatConfig);
-    memberCombatConfig = await getResolvedPlayerCombatConfig(memberName);
-  }
-
-  console.log("CREATE COMBAT INSTANCE -> member combat config", {
-    memberName,
-    memberCombatConfig
-  });
-
-  const unit = await buildPlayerCombatUnit(memberName, {
-    attack_sequence: memberCombatConfig.attack_sequence,
-    target_strategy: memberCombatConfig.target_strategy
-  });
-
-  playerUnits.push(unit);
-}
-
-  console.log("CREATE COMBAT INSTANCE -> playerUnits built", playerUnits);
-
-  const enemyUnits = buildEnemyCombatGroup(encounterId, tileId);
-  console.log("CREATE COMBAT INSTANCE -> enemyUnits built", enemyUnits);
-
-  if (!enemyUnits || enemyUnits.length === 0) {
-    throw new Error("Encounter not found for tile");
-  }
-
-  const combatId = createCombatId();
-
-  const combatInstance = {
-    combat_id: combatId,
-    party_id: partyId,
-    tile_id: tileId,
-    encounter_id: encounterId,
-    status: "active",
-    round: 0,
-    turn_phase: "players",
-    started_by: startedBy,
-    player_units: playerUnits,
-    enemy_units: enemyUnits,
-    resolved_actions_log: [],
-    auto_loop_started: false,
-    round_timer: null,
-    created_at: new Date().toISOString()
-  };
-
-  combatInstances.set(combatId, combatInstance);
-
-  for (const unit of playerUnits) {
-    if (unit.player_name) {
-      playerCombatIndex.set(unit.player_name, combatId);
-    }
-  }
-
-  console.log("CREATE COMBAT INSTANCE -> DONE", combatId);
-  return combatInstance;
 }
 
 function findCombatByPlayer(playerName) {
@@ -2094,64 +2372,124 @@ const SKILL_REGISTRY = {
   },
 
   "Blackpike Thrust": {
-  name: "Blackpike Thrust",
-  type: "Offensive",
-  rank: 1,
-  cost: 10,
-  damage: 0,
-  flat_bonus: 9,
-  multiplier: 1.25,
-  cooldown: 1,
-  description: "A disciplined spear thrust from a blackpike sentinel."
-},
+    name: "Blackpike Thrust",
+    type: "Offensive",
+    rank: 1,
+    cost: 10,
+    damage: 0,
+    flat_bonus: 9,
+    multiplier: 1.25,
+    cooldown: 1,
+    description: "A disciplined spear thrust from a blackpike sentinel."
+  },
 
-"Hex Bind": {
-  name: "Hex Bind",
-  type: "Defensive",
-  rank: 1,
-  cost: 8,
-  damage: 0,
-  flat_bonus: 0,
-  multiplier: 1.0,
-  cooldown: 2,
-  description: "A restraining curse that helps the caster survive incoming pressure."
-},
+  "Hex Bind": {
+    name: "Hex Bind",
+    type: "Defensive",
+    rank: 1,
+    cost: 8,
+    damage: 0,
+    flat_bonus: 0,
+    multiplier: 1.0,
+    cooldown: 2,
+    description: "A restraining curse that helps the caster survive incoming pressure."
+  },
 
-"Mortar Burst": {
-  name: "Mortar Burst",
-  type: "Offensive",
-  rank: 1,
-  cost: 12,
-  damage: 0,
-  flat_bonus: 12,
-  multiplier: 1.35,
-  cooldown: 2,
-  description: "A brutal explosive impact from the bombard crew."
-},
+  "Mortar Burst": {
+    name: "Mortar Burst",
+    type: "Offensive",
+    rank: 1,
+    cost: 12,
+    damage: 0,
+    flat_bonus: 12,
+    multiplier: 1.35,
+    cooldown: 2,
+    description: "A brutal explosive impact from the bombard crew."
+  },
 
-"Reaper Cleave": {
-  name: "Reaper Cleave",
-  type: "Offensive",
-  rank: 1,
-  cost: 11,
-  damage: 0,
-  flat_bonus: 10,
-  multiplier: 1.30,
-  cooldown: 2,
-  description: "A sweeping execution strike designed to finish weakened enemies."
-},
+  "Reaper Cleave": {
+    name: "Reaper Cleave",
+    type: "Offensive",
+    rank: 1,
+    cost: 11,
+    damage: 0,
+    flat_bonus: 10,
+    multiplier: 1.30,
+    cooldown: 2,
+    description: "A sweeping execution strike designed to finish weakened enemies."
+  },
 
-"Carrion Fumes": {
-  name: "Carrion Fumes",
-  type: "Defensive",
-  rank: 1,
-  cost: 9,
-  damage: 0,
-  flat_bonus: 0,
-  multiplier: 1.0,
-  cooldown: 2,
-  description: "A toxic defensive veil that helps the alchemist endure incoming attacks."
-}
+  "Carrion Fumes": {
+    name: "Carrion Fumes",
+    type: "Defensive",
+    rank: 1,
+    cost: 9,
+    damage: 0,
+    flat_bonus: 0,
+    multiplier: 1.0,
+    cooldown: 2,
+    description: "A toxic defensive veil that helps the alchemist endure incoming attacks."
+  },
+
+  "ChainSlash": {
+    name: "ChainSlash",
+    type: "Offensive",
+    rank: 1,
+    cost: 8,
+    damage: 0,
+    flat_bonus: 6,
+    multiplier: 1.15,
+    cooldown: 1,
+    description: "A chained slash delivered by cursed troops."
+  },
+
+  "Dread Command": {
+    name: "Dread Command",
+    type: "Defensive",
+    rank: 1,
+    cost: 10,
+    damage: 0,
+    flat_bonus: 0,
+    multiplier: 1.0,
+    cooldown: 2,
+    description: "A dark command that reinforces the marshal's line."
+  },
+
+  "Gloom Ray": {
+    name: "Gloom Ray",
+    type: "Offensive",
+    rank: 1,
+    cost: 12,
+    damage: 0,
+    flat_bonus: 11,
+    multiplier: 1.35,
+    cooldown: 2,
+    description: "A sinister ranged blast of concentrated gloom."
+  },
+
+  "Exarch Judgment": {
+    name: "Exarch Judgment",
+    type: "Offensive",
+    rank: 1,
+    cost: 14,
+    damage: 0,
+    flat_bonus: 14,
+    multiplier: 1.45,
+    cooldown: 3,
+    description: "A punishing strike delivered by the Warden Exarch."
+  },
+
+  "Crown Fall": {
+    name: "Crown Fall",
+    type: "Offensive",
+    rank: 1,
+    cost: 15,
+    damage: 0,
+    flat_bonus: 16,
+    multiplier: 1.55,
+    cooldown: 3,
+    description: "A catastrophic finishing blow from the royal cataclysm."
+  }
 };
 
 function getSkillData(skillName) {
@@ -2283,7 +2621,8 @@ function applyDefensiveSkill(unit, skillData) {
     skillName === "Bastion Stance" ||
     skillName === "Ashen Guard" ||
     skillName === "Hex Bind" ||
-    skillName === "Carrion Fumes"
+    skillName === "Carrion Fumes" ||
+    skillName === "Dread Command"
   ) {
     unit.guard_stance_turns = 2;
     unit.block_active = false;
