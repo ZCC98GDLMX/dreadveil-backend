@@ -826,6 +826,98 @@ function buildEncounterRewards(encounterId, tileId) {
         ],
         mission_tags: ["ashen_chaplain_kill"]
       }
+    },
+
+    ct_2: {
+      Blackpike_Sentinel: {
+        xp: 150,
+        gold: 80,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "blackpike_fragment",
+            name: "Blackpike Fragment",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/BlackpikeFragment.png"
+          }
+        ],
+        mission_tags: ["blackpike_sentinel_kill"]
+      },
+
+      Chain_Hexer: {
+        xp: 165,
+        gold: 90,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "hexer_chain",
+            name: "Hexer Chain",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/HexerChain.png"
+          }
+        ],
+        mission_tags: ["chain_hexer_kill"]
+      },
+
+      Grave_Bombard: {
+        xp: 175,
+        gold: 95,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "bombard_core",
+            name: "Bombard Core",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/BombardCore.png"
+          }
+        ],
+        mission_tags: ["grave_bombard_kill"]
+      },
+
+      Oath_Reaper: {
+        xp: 180,
+        gold: 105,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "reaper_talon",
+            name: "Reaper Talon",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/ReaperTalon.png"
+          }
+        ],
+        mission_tags: ["oath_reaper_kill"]
+      },
+
+      Carrion_Alchemist: {
+        xp: 190,
+        gold: 115,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "carrion_vial",
+            name: "Carrion Vial",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/CarrionVial.png"
+          }
+        ],
+        mission_tags: ["carrion_alchemist_kill"]
+      }
     }
   };
 
@@ -1260,6 +1352,331 @@ function buildEnemyCombatGroup(encounterId, tileId) {
           is_alive: true
         }
       ]
+    },
+
+    ct_2: {
+      Blackpike_Sentinel: [
+        {
+          unit_id: "enemy_blackpike_sentinel_a",
+          unit_type: "enemy",
+          display_name: "Blackpike Sentinel A",
+          hp: 320,
+          max_hp: 320,
+          ap: 110,
+          max_ap: 110,
+          damage_bonus: 24,
+          defense_bonus: 20,
+          armor_penetration: 5,
+          lifesteal: 0,
+          attack_sequence: ["Guard Stance", "Blackpike Thrust"],
+          target_strategy: "first_alive",
+          skill_cooldowns: createSkillCooldownMap(["Guard Stance", "Blackpike Thrust"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_blackpike_sentinel_b",
+          unit_type: "enemy",
+          display_name: "Blackpike Sentinel B",
+          hp: 320,
+          max_hp: 320,
+          ap: 110,
+          max_ap: 110,
+          damage_bonus: 24,
+          defense_bonus: 20,
+          armor_penetration: 5,
+          lifesteal: 0,
+          attack_sequence: ["Guard Stance", "Blackpike Thrust"],
+          target_strategy: "first_alive",
+          skill_cooldowns: createSkillCooldownMap(["Guard Stance", "Blackpike Thrust"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        }
+      ],
+
+      Chain_Hexer: [
+        {
+          unit_id: "enemy_chain_hexer",
+          unit_type: "enemy",
+          display_name: "Chain Hexer",
+          hp: 230,
+          max_hp: 230,
+          ap: 125,
+          max_ap: 125,
+          damage_bonus: 18,
+          defense_bonus: 12,
+          armor_penetration: 4,
+          lifesteal: 0,
+          attack_sequence: ["Hex Bind", "ChainSlash"],
+          target_strategy: "lowest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Hex Bind", "ChainSlash"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_hexer_guard_a",
+          unit_type: "enemy",
+          display_name: "Hexer Guard A",
+          hp: 280,
+          max_hp: 280,
+          ap: 110,
+          max_ap: 110,
+          damage_bonus: 22,
+          defense_bonus: 16,
+          armor_penetration: 4,
+          lifesteal: 0,
+          attack_sequence: ["Block", "Slash"],
+          target_strategy: "first_alive",
+          skill_cooldowns: createSkillCooldownMap(["Block", "Slash"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_hexer_guard_b",
+          unit_type: "enemy",
+          display_name: "Hexer Guard B",
+          hp: 280,
+          max_hp: 280,
+          ap: 110,
+          max_ap: 110,
+          damage_bonus: 22,
+          defense_bonus: 16,
+          armor_penetration: 4,
+          lifesteal: 0,
+          attack_sequence: ["Block", "Slash"],
+          target_strategy: "first_alive",
+          skill_cooldowns: createSkillCooldownMap(["Block", "Slash"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        }
+      ],
+
+      Grave_Bombard: [
+        {
+          unit_id: "enemy_grave_bombard",
+          unit_type: "enemy",
+          display_name: "Grave Bombard",
+          hp: 260,
+          max_hp: 260,
+          ap: 120,
+          max_ap: 120,
+          damage_bonus: 30,
+          defense_bonus: 12,
+          armor_penetration: 8,
+          lifesteal: 0,
+          attack_sequence: ["Mortar Burst", "Slash"],
+          target_strategy: "lowest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Mortar Burst", "Slash"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_bombard_loader_a",
+          unit_type: "enemy",
+          display_name: "Bombard Loader A",
+          hp: 240,
+          max_hp: 240,
+          ap: 100,
+          max_ap: 100,
+          damage_bonus: 20,
+          defense_bonus: 12,
+          armor_penetration: 3,
+          lifesteal: 0,
+          attack_sequence: ["Slash"],
+          target_strategy: "first_alive",
+          skill_cooldowns: createSkillCooldownMap(["Slash"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_bombard_loader_b",
+          unit_type: "enemy",
+          display_name: "Bombard Loader B",
+          hp: 240,
+          max_hp: 240,
+          ap: 100,
+          max_ap: 100,
+          damage_bonus: 20,
+          defense_bonus: 12,
+          armor_penetration: 3,
+          lifesteal: 0,
+          attack_sequence: ["Slash"],
+          target_strategy: "first_alive",
+          skill_cooldowns: createSkillCooldownMap(["Slash"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        }
+      ],
+
+      Oath_Reaper: [
+        {
+          unit_id: "enemy_oath_reaper_a",
+          unit_type: "enemy",
+          display_name: "Oath Reaper A",
+          hp: 280,
+          max_hp: 280,
+          ap: 120,
+          max_ap: 120,
+          damage_bonus: 32,
+          defense_bonus: 14,
+          armor_penetration: 9,
+          lifesteal: 0,
+          attack_sequence: ["Reaper Cleave", "Intercept"],
+          target_strategy: "lowest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Reaper Cleave", "Intercept"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_oath_reaper_b",
+          unit_type: "enemy",
+          display_name: "Oath Reaper B",
+          hp: 280,
+          max_hp: 280,
+          ap: 120,
+          max_ap: 120,
+          damage_bonus: 32,
+          defense_bonus: 14,
+          armor_penetration: 9,
+          lifesteal: 0,
+          attack_sequence: ["Reaper Cleave", "Intercept"],
+          target_strategy: "lowest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Reaper Cleave", "Intercept"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        }
+      ],
+
+      Carrion_Alchemist: [
+        {
+          unit_id: "enemy_carrion_alchemist",
+          unit_type: "enemy",
+          display_name: "Carrion Alchemist",
+          hp: 250,
+          max_hp: 250,
+          ap: 125,
+          max_ap: 125,
+          damage_bonus: 20,
+          defense_bonus: 14,
+          armor_penetration: 5,
+          lifesteal: 0,
+          attack_sequence: ["Carrion Fumes", "ChainSlash"],
+          target_strategy: "lowest_hp",
+          skill_cooldowns: createSkillCooldownMap(["Carrion Fumes", "ChainSlash"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_alchemist_escort_a",
+          unit_type: "enemy",
+          display_name: "Alchemist Escort A",
+          hp: 290,
+          max_hp: 290,
+          ap: 110,
+          max_ap: 110,
+          damage_bonus: 24,
+          defense_bonus: 16,
+          armor_penetration: 4,
+          lifesteal: 0,
+          attack_sequence: ["Block", "Slash"],
+          target_strategy: "first_alive",
+          skill_cooldowns: createSkillCooldownMap(["Block", "Slash"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_alchemist_escort_b",
+          unit_type: "enemy",
+          display_name: "Alchemist Escort B",
+          hp: 290,
+          max_hp: 290,
+          ap: 110,
+          max_ap: 110,
+          damage_bonus: 24,
+          defense_bonus: 16,
+          armor_penetration: 4,
+          lifesteal: 0,
+          attack_sequence: ["Block", "Slash"],
+          target_strategy: "first_alive",
+          skill_cooldowns: createSkillCooldownMap(["Block", "Slash"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        },
+        {
+          unit_id: "enemy_alchemist_escort_c",
+          unit_type: "enemy",
+          display_name: "Alchemist Escort C",
+          hp: 250,
+          max_hp: 250,
+          ap: 100,
+          max_ap: 100,
+          damage_bonus: 20,
+          defense_bonus: 14,
+          armor_penetration: 4,
+          lifesteal: 0,
+          attack_sequence: ["Slash"],
+          target_strategy: "first_alive",
+          skill_cooldowns: createSkillCooldownMap(["Slash"]),
+          sequence_index: 0,
+          block_active: false,
+          intercept_active: false,
+          guard_stance_turns: 0,
+          last_skill_used: "",
+          is_alive: true
+        }
+      ]
     }
   };
 
@@ -1674,7 +2091,67 @@ const SKILL_REGISTRY = {
     multiplier: 1.45,
     cooldown: 3,
     description: "A coordinated volley of scorching projectiles."
-  }
+  },
+
+  "Blackpike Thrust": {
+  name: "Blackpike Thrust",
+  type: "Offensive",
+  rank: 1,
+  cost: 10,
+  damage: 0,
+  flat_bonus: 9,
+  multiplier: 1.25,
+  cooldown: 1,
+  description: "A disciplined spear thrust from a blackpike sentinel."
+},
+
+"Hex Bind": {
+  name: "Hex Bind",
+  type: "Defensive",
+  rank: 1,
+  cost: 8,
+  damage: 0,
+  flat_bonus: 0,
+  multiplier: 1.0,
+  cooldown: 2,
+  description: "A restraining curse that helps the caster survive incoming pressure."
+},
+
+"Mortar Burst": {
+  name: "Mortar Burst",
+  type: "Offensive",
+  rank: 1,
+  cost: 12,
+  damage: 0,
+  flat_bonus: 12,
+  multiplier: 1.35,
+  cooldown: 2,
+  description: "A brutal explosive impact from the bombard crew."
+},
+
+"Reaper Cleave": {
+  name: "Reaper Cleave",
+  type: "Offensive",
+  rank: 1,
+  cost: 11,
+  damage: 0,
+  flat_bonus: 10,
+  multiplier: 1.30,
+  cooldown: 2,
+  description: "A sweeping execution strike designed to finish weakened enemies."
+},
+
+"Carrion Fumes": {
+  name: "Carrion Fumes",
+  type: "Defensive",
+  rank: 1,
+  cost: 9,
+  damage: 0,
+  flat_bonus: 0,
+  multiplier: 1.0,
+  cooldown: 2,
+  description: "A toxic defensive veil that helps the alchemist endure incoming attacks."
+}
 };
 
 function getSkillData(skillName) {
@@ -1804,7 +2281,9 @@ function applyDefensiveSkill(unit, skillData) {
   if (
     skillName === "Guard Stance" ||
     skillName === "Bastion Stance" ||
-    skillName === "Ashen Guard"
+    skillName === "Ashen Guard" ||
+    skillName === "Hex Bind" ||
+    skillName === "Carrion Fumes"
   ) {
     unit.guard_stance_turns = 2;
     unit.block_active = false;
