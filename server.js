@@ -2125,6 +2125,225 @@ function buildEnemyCombatGroup(encounterId, tileId) {
   return JSON.parse(JSON.stringify(group));
 }
 
+async function createPartyCombatInstance(
+  partyId,
+  encounterId,
+  tileId,
+  startedBy,
+  starterConfig = {}
+) {
+  console.log("CREATE COMBAT INSTANCE -> START", {
+    partyId,
+    encounterId,
+    tileId,
+    startedBy,
+    starterConfig
+  });
+
+  if (!partyId || !encounterId || !tileId || !startedBy) {
+    throw new Error("Missing combat creation parameters");
+  }
+
+  const { data: membersRows, error: membersError } = await supabase
+    .from("party_members")
+    .select("player_name")
+    .eq("party_id", partyId)
+    .order("joined_at", { ascending: true });
+
+  if (membersError) throw membersError;
+  if (!membersRows || membersRows.length === 0) {
+    throw new Error("Party has no members");
+  }
+
+  console.log("CREATE COMBAT INSTANCE -> membersRows", membersRows);
+
+  const playerUnits = [];
+
+  for (const row of membersRows) {
+    const memberName = row.player_name;
+    const isStarter = memberName === startedBy;
+
+    let memberCombatConfig = await getResolvedPlayerCombatConfig(memberName);
+
+    if (isStarter) {
+      const starterSequence = normalizeAttackSequence(starterConfig.attack_sequence);
+      const starterTargetStrategy = normalizeTargetStrategy(starterConfig.target_strategy);
+
+      memberCombatConfig = {
+        attack_sequence:
+          starterSequence.length > 0
+            ? starterSequence
+            : memberCombatConfig.attack_sequence,
+        target_strategy: starterTargetStrategy || memberCombatConfig.target_strategy
+      };
+
+      await upsertPlayerCombatConfig(memberName, memberCombatConfig);
+      memberCombatConfig = await getResolvedPlayerCombatConfig(memberName);
+    }
+
+    console.log("CREATE COMBAT INSTANCE -> member combat config", {
+      memberName,
+      memberCombatConfig
+    });
+
+    const unit = await buildPlayerCombatUnit(memberName, {
+      attack_sequence: memberCombatConfig.attack_sequence,
+      target_strategy: memberCombatConfig.target_strategy
+    });
+
+    playerUnits.push(unit);
+  }
+
+  console.log("CREATE COMBAT INSTANCE -> playerUnits built", playerUnits);
+
+  const enemyUnits = buildEnemyCombatGroup(encounterId, tileId);
+  console.log("CREATE COMBAT INSTANCE -> enemyUnits built", enemyUnits);
+
+  if (!enemyUnits || enemyUnits.length === 0) {
+    throw new Error("Encounter not found for tile");
+  }
+
+  const combatId = createCombatId();
+
+  const combatInstance = {
+    combat_id: combatId,
+    party_id: partyId,
+    tile_id: tileId,
+    encounter_id: encounterId,
+    status: "active",
+    round: 0,
+    turn_phase: "players",
+    started_by: startedBy,
+    player_units: playerUnits,
+    enemy_units: enemyUnits,
+    resolved_actions_log: [],
+    auto_loop_started: false,
+    round_timer: null,
+    created_at: new Date().toISOString()
+  };
+
+  combatInstances.set(combatId, combatInstance);
+
+  for (const unit of playerUnits) {
+    if (unit.player_name) {
+      playerCombatIndex.set(unit.player_name, combatId);
+    }
+  }
+
+  console.log("CREATE COMBAT INSTANCE -> DONE", combatId);
+  return combatInstance;
+}
+
+async function createPartyCombatInstance(
+  partyId,
+  encounterId,
+  tileId,
+  startedBy,
+  starterConfig = {}
+) {
+  console.log("CREATE COMBAT INSTANCE -> START", {
+    partyId,
+    encounterId,
+    tileId,
+    startedBy,
+    starterConfig
+  });
+
+  if (!partyId || !encounterId || !tileId || !startedBy) {
+    throw new Error("Missing combat creation parameters");
+  }
+
+  const { data: membersRows, error: membersError } = await supabase
+    .from("party_members")
+    .select("player_name")
+    .eq("party_id", partyId)
+    .order("joined_at", { ascending: true });
+
+  if (membersError) throw membersError;
+  if (!membersRows || membersRows.length === 0) {
+    throw new Error("Party has no members");
+  }
+
+  console.log("CREATE COMBAT INSTANCE -> membersRows", membersRows);
+
+  const playerUnits = [];
+
+  for (const row of membersRows) {
+    const memberName = row.player_name;
+    const isStarter = memberName === startedBy;
+
+    let memberCombatConfig = await getResolvedPlayerCombatConfig(memberName);
+
+    if (isStarter) {
+      const starterSequence = normalizeAttackSequence(starterConfig.attack_sequence);
+      const starterTargetStrategy = normalizeTargetStrategy(starterConfig.target_strategy);
+
+      memberCombatConfig = {
+        attack_sequence:
+          starterSequence.length > 0
+            ? starterSequence
+            : memberCombatConfig.attack_sequence,
+        target_strategy: starterTargetStrategy || memberCombatConfig.target_strategy
+      };
+
+      await upsertPlayerCombatConfig(memberName, memberCombatConfig);
+      memberCombatConfig = await getResolvedPlayerCombatConfig(memberName);
+    }
+
+    console.log("CREATE COMBAT INSTANCE -> member combat config", {
+      memberName,
+      memberCombatConfig
+    });
+
+    const unit = await buildPlayerCombatUnit(memberName, {
+      attack_sequence: memberCombatConfig.attack_sequence,
+      target_strategy: memberCombatConfig.target_strategy
+    });
+
+    playerUnits.push(unit);
+  }
+
+  console.log("CREATE COMBAT INSTANCE -> playerUnits built", playerUnits);
+
+  const enemyUnits = buildEnemyCombatGroup(encounterId, tileId);
+  console.log("CREATE COMBAT INSTANCE -> enemyUnits built", enemyUnits);
+
+  if (!enemyUnits || enemyUnits.length === 0) {
+    throw new Error("Encounter not found for tile");
+  }
+
+  const combatId = createCombatId();
+
+  const combatInstance = {
+    combat_id: combatId,
+    party_id: partyId,
+    tile_id: tileId,
+    encounter_id: encounterId,
+    status: "active",
+    round: 0,
+    turn_phase: "players",
+    started_by: startedBy,
+    player_units: playerUnits,
+    enemy_units: enemyUnits,
+    resolved_actions_log: [],
+    auto_loop_started: false,
+    round_timer: null,
+    created_at: new Date().toISOString()
+  };
+
+  combatInstances.set(combatId, combatInstance);
+
+  for (const unit of playerUnits) {
+    if (unit.player_name) {
+      playerCombatIndex.set(unit.player_name, combatId);
+    }
+  }
+
+  console.log("CREATE COMBAT INSTANCE -> DONE", combatId);
+  return combatInstance;
+}
+
+
 function findCombatByPlayer(playerName) {
   const combatId = playerCombatIndex.get(playerName);
   if (!combatId) return null;
