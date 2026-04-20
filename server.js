@@ -2343,6 +2343,101 @@ async function createPartyCombatInstance(
   return combatInstance;
 }
 
+function sanitizeCombatUnit(unit) {
+  if (!unit) return null;
+
+  return {
+    unit_id: unit.unit_id || "",
+    player_name: unit.player_name || "",
+    unit_type: unit.unit_type || (unit.is_player ? "player" : "enemy"),
+    display_name: unit.display_name || unit.player_name || "Unknown",
+    team: unit.team || "",
+    is_player: Boolean(unit.is_player),
+    is_enemy: Boolean(unit.is_enemy),
+    alive: Boolean(unit.alive !== undefined ? unit.alive : unit.is_alive),
+    is_alive: Boolean(unit.is_alive !== undefined ? unit.is_alive : unit.alive),
+
+    hp: Number(unit.hp || 0),
+    max_hp: Number(unit.max_hp || 0),
+    ap: Number(unit.ap || 0),
+    max_ap: Number(unit.max_ap || 0),
+
+    damage_bonus: Number(unit.damage_bonus || 0),
+    defense_bonus: Number(unit.defense_bonus || 0),
+    armor_penetration: Number(unit.armor_penetration || 0),
+    critical_chance: Number(unit.critical_chance || 0),
+    lifesteal: Number(unit.lifesteal || 0),
+
+    attack_sequence: Array.isArray(unit.attack_sequence) ? [...unit.attack_sequence] : [],
+    target_strategy: String(unit.target_strategy || "first_alive"),
+    sequence_index: Number(unit.sequence_index || 0),
+
+    skill_cooldowns: { ...(unit.skill_cooldowns || unit.cooldowns || {}) },
+    cooldowns: { ...(unit.cooldowns || unit.skill_cooldowns || {}) },
+
+    block_active: Boolean(unit.block_active),
+    intercept_active: Boolean(unit.intercept_active),
+    guard_stance_turns: Number(unit.guard_stance_turns || 0),
+
+    last_skill_used: String(unit.last_skill_used || "")
+  };
+}
+
+function sanitizeCombatState(combat) {
+  if (!combat) return null;
+
+  return {
+    combat_id: combat.combat_id,
+    party_id: combat.party_id,
+    tile_id: combat.tile_id,
+    encounter_id: combat.encounter_id,
+    status: combat.status || "unknown",
+    round: Number(combat.round || 0),
+    turn_phase: String(combat.turn_phase || "players"),
+    started_by: String(combat.started_by || ""),
+    created_at: combat.created_at || null,
+
+    player_units: Array.isArray(combat.player_units)
+      ? combat.player_units.map(sanitizeCombatUnit).filter(Boolean)
+      : [],
+
+    enemy_units: Array.isArray(combat.enemy_units)
+      ? combat.enemy_units.map(sanitizeCombatUnit).filter(Boolean)
+      : [],
+
+    resolved_actions_log: Array.isArray(combat.resolved_actions_log)
+      ? combat.resolved_actions_log.map((entry) => ({ ...entry }))
+      : []
+  };
+}
+
+function broadcastCombatState(combatId) {
+  const combat = combatInstances.get(combatId);
+  if (!combat) return;
+
+  const payload = {
+    type: "combat_state",
+    combat: sanitizeCombatState(combat)
+  };
+
+  if (combat.party_id) {
+    broadcastToParty(combat.party_id, payload);
+    return;
+  }
+
+  for (const unit of combat.player_units || []) {
+    const playerName = String(unit.player_name || "").trim();
+    if (!playerName) continue;
+
+    for (const [ws, client] of wsClients.entries()) {
+      if (client && client.player_name === playerName) {
+        sendWs(ws, payload);
+      }
+    }
+  }
+}
+
+
 
 function findCombatByPlayer(playerName) {
   const combatId = playerCombatIndex.get(playerName);
