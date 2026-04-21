@@ -471,6 +471,34 @@ if (type === "identify") {
       }
 
 
+            if (type === "character_unlock_phase_base") {
+        const playerName = String(data.player_name || client?.player_name || "").trim();
+        const requestedPhase = Number(data.unlocked_knight_phase_base || 0);
+
+        if (!playerName) {
+          sendWs(ws, { type: "error", message: "Missing player_name" });
+          return;
+        }
+
+        if (!Number.isFinite(requestedPhase) || requestedPhase < 0) {
+          sendWs(ws, { type: "error", message: "Invalid unlocked_knight_phase_base" });
+          return;
+        }
+
+        const current = await getOrCreatePlayerCharacter(playerName);
+
+        const updated = await savePlayerCharacter(playerName, {
+          unlocked_knight_phase_base: Math.max(
+            Number(current.unlocked_knight_phase_base || 0),
+            requestedPhase
+          )
+        });
+
+        sendWs(ws, buildCharacterStatePayload(updated));
+        return;
+      }
+
+
             // PRESENCE JOIN
       if (type === "presence_join") {
         const playerName = String(data.player_name || client?.player_name || "").trim();
