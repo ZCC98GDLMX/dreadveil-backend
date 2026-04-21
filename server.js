@@ -3757,6 +3757,294 @@ function buildRoundActionQueue(combat) {
   return queue;
 }
 
+
+function buildEncounterRewards(encounterId, tileId) {
+  const rewardsByTile = {
+    ct_1: {
+      Furnace_Hound: {
+        xp: 180,
+        gold: 95,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "corrupted_core",
+            name: "Corrupted Core",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/CorruptedCore.png"
+          }
+        ],
+        mission_tags: ["furnace_hound_kill"]
+      },
+
+      Cinder_Footman: {
+        xp: 120,
+        gold: 60,
+        skulls: 0,
+        gems: 0,
+        drops: [],
+        mission_tags: ["cinder_footman_kill"]
+      },
+
+      Bastion_Halberdier: {
+        xp: 180,
+        gold: 95,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "bastion_shard",
+            name: "Bastion Shard",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/BastionShard.png"
+          }
+        ],
+        mission_tags: ["bastion_halberdier_kill"]
+      },
+
+      Pyre_Archer: {
+        xp: 190,
+        gold: 105,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "charred_arrowhead",
+            name: "Charred Arrowhead",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/CharredArrowhead.png"
+          }
+        ],
+        mission_tags: ["pyre_archer_kill"]
+      },
+
+      Ashen_Chaplain: {
+        xp: 210,
+        gold: 115,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "ashen_reliquary_fragment",
+            name: "Ashen Reliquary Fragment",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/AshenReliquaryFragment.png"
+          }
+        ],
+        mission_tags: ["ashen_chaplain_kill"]
+      }
+    },
+
+    ct_2: {
+      Blackpike_Sentinel: {
+        xp: 150,
+        gold: 80,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "blackpike_fragment",
+            name: "Blackpike Fragment",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/BlackpikeFragment.png"
+          }
+        ],
+        mission_tags: ["blackpike_sentinel_kill"]
+      },
+
+      Chain_Hexer: {
+        xp: 165,
+        gold: 90,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "hexer_chain",
+            name: "Hexer Chain",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/HexerChain.png"
+          }
+        ],
+        mission_tags: ["chain_hexer_kill"]
+      },
+
+      Grave_Bombard: {
+        xp: 175,
+        gold: 95,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "bombard_core",
+            name: "Bombard Core",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/BombardCore.png"
+          }
+        ],
+        mission_tags: ["grave_bombard_kill"]
+      },
+
+      Oath_Reaper: {
+        xp: 180,
+        gold: 105,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "reaper_talon",
+            name: "Reaper Talon",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/ReaperTalon.png"
+          }
+        ],
+        mission_tags: ["oath_reaper_kill"]
+      },
+
+      Carrion_Alchemist: {
+        xp: 190,
+        gold: 115,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "carrion_vial",
+            name: "Carrion Vial",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/CarrionVial.png"
+          }
+        ],
+        mission_tags: ["carrion_alchemist_kill"]
+      }
+    },
+
+    ct_3: {
+      Dread_Marshal: {
+        xp: 220,
+        gold: 130,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "dread_seal",
+            name: "Dread Seal",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/DreadSeal.png"
+          }
+        ],
+        mission_tags: ["dread_marshal_kill"]
+      },
+
+      Gloom_Eye: {
+        xp: 210,
+        gold: 120,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "gloom_orb",
+            name: "Gloom Orb",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/GloomOrb.png"
+          }
+        ],
+        mission_tags: ["gloom_eye_kill"]
+      },
+
+      Ruin_Butcher: {
+        xp: 215,
+        gold: 125,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "butcher_hook",
+            name: "Butcher Hook",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/ButcherHook.png"
+          }
+        ],
+        mission_tags: ["ruin_butcher_kill"]
+      },
+
+      Catacomb_Beast: {
+        xp: 225,
+        gold: 135,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "catacomb_fang",
+            name: "Catacomb Fang",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/CatacombFang.png"
+          }
+        ],
+        mission_tags: ["catacomb_beast_kill"]
+      },
+
+      Warden_Exarch: {
+        xp: 260,
+        gold: 160,
+        skulls: 0,
+        gems: 0,
+        drops: [
+          {
+            item_id: "exarch_emblem",
+            name: "Exarch Emblem",
+            quantity: 1,
+            stackable: true,
+            type: "Material",
+            icon_path: "res://art/Items/Materials/ExarchEmblem.png"
+          }
+        ],
+        mission_tags: ["warden_exarch_kill"]
+      }
+    }
+  };
+
+  const tileRewards = rewardsByTile[tileId] || {};
+  const reward = tileRewards[encounterId];
+
+  if (!reward) {
+    return {
+      xp: 0,
+      gold: 0,
+      skulls: 0,
+      gems: 0,
+      drops: [],
+      mission_tags: []
+    };
+  }
+
+  return JSON.parse(JSON.stringify(reward));
+}
+
 async function finishCombatAndScheduleCleanup(combat) {
   if (!combat) return;
 
