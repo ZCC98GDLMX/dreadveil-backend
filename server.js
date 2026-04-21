@@ -1071,12 +1071,12 @@ function normalizeInventoryRow(row = {}) {
     custom_data: row.custom_data || {},
 
     name: String(row.name || "").trim(),
-    type: String(row.item_type || "").trim(),
+    type: String(row.item_type || row.type || "").trim(),
     equip_slot: String(row.equip_slot || "").trim(),
     stackable: Boolean(row.stackable),
     max_stack: Math.max(1, Number(row.max_stack || 1)),
-    price: Math.max(0, Number(row.buy_price || 0)),
-    sell_price: Math.max(0, Number(row.sell_price || 0)),
+    price: Math.max(0, Number(row.buy_price ?? row.price ?? 0)),
+    sell_price: Math.max(0, Number(row.sell_price ?? 0)),
     description: String(row.description || "").trim(),
     icon_path: String(row.icon_path || "").trim(),
     set_name: String(row.set_name || "").trim(),
@@ -1141,7 +1141,7 @@ async function getPlayerInventoryRows(playerName) {
   if (error) {
     throw error;
   }
-
+  console.log("RAW INVENTORY DATA ->", data);
   return Array.isArray(data) ? data.map(normalizeInventoryRow) : [];
 }
 
