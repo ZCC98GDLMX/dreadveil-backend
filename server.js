@@ -400,6 +400,101 @@ if (type === "identify") {
   return;
 }
 
+if (type === "quest_state_get") {
+  const playerName = String(data.player_name || client?.player_name || "").trim();
+  const mapId = String(data.map_id || "").trim();
+  const npcId = String(data.npc_id || "").trim();
+
+  if (!playerName || !mapId || !npcId) {
+    sendWs(ws, { type: "error", message: "Missing quest_state_get fields" });
+    return;
+  }
+
+  const payload = await buildPlayerQuestStatePayload(playerName, mapId, npcId);
+  sendWs(ws, payload);
+  return;
+}
+
+if (type === "quest_accept") {
+  const playerName = String(data.player_name || client?.player_name || "").trim();
+  const mapId = String(data.map_id || "").trim();
+  const npcId = String(data.npc_id || "").trim();
+
+  if (!playerName || !mapId || !npcId) {
+    sendWs(ws, { type: "error", message: "Missing quest_accept fields" });
+    return;
+  }
+
+  const result = await acceptQuestForNpc(playerName, mapId, npcId);
+
+  sendWs(ws, {
+    type: "quest_accept_result",
+    player_name: playerName,
+    map_id: mapId,
+    npc_id: npcId,
+    ...result
+  });
+
+  const payload = await buildPlayerQuestStatePayload(playerName, mapId, npcId);
+  sendWs(ws, payload);
+  return;
+}
+
+if (type === "quest_claim") {
+  const playerName = String(data.player_name || client?.player_name || "").trim();
+  const mapId = String(data.map_id || "").trim();
+  const npcId = String(data.npc_id || "").trim();
+  const questId = String(data.quest_id || "").trim();
+
+  if (!playerName || !mapId || !npcId) {
+    sendWs(ws, { type: "error", message: "Missing quest_claim fields" });
+    return;
+  }
+
+  const result = await claimQuestRewards(playerName, mapId, npcId, questId);
+
+  sendWs(ws, {
+    type: "quest_claim_result",
+    player_name: playerName,
+    map_id: mapId,
+    npc_id: npcId,
+    ...result
+  });
+
+  if (result?.ok && result.character) {
+    sendWs(ws, buildCharacterStatePayload(result.character));
+  }
+
+  const payload = await buildPlayerQuestStatePayload(playerName, mapId, npcId);
+  sendWs(ws, payload);
+  return;
+}
+
+if (type === "quest_progress_event") {
+  const playerName = String(data.player_name || client?.player_name || "").trim();
+  const eventType = String(data.event_type || "").trim();
+  const targetId = String(data.target_id || "").trim();
+  const amount = Math.max(1, Number(data.amount || 1));
+
+  if (!playerName || !eventType || !targetId) {
+    sendWs(ws, { type: "error", message: "Missing quest_progress_event fields" });
+    return;
+  }
+
+  const result = await progressQuestEvent(playerName, eventType, targetId, amount);
+
+  sendWs(ws, {
+    type: "quest_progress_result",
+    player_name: playerName,
+    event_type: eventType,
+    target_id: targetId,
+    amount,
+    ...result
+  });
+
+  return;
+}
+
 if (type === "inventory_get") {
   const playerName = String(data.player_name || client?.player_name || "").trim();
 
@@ -1390,6 +1485,602 @@ function buildCharacterStatePayload(character) {
     action_points_stat: Number(character.action_points_stat || 0),
     unlocked_knight_phase_base: Number(character.unlocked_knight_phase_base || 0)
   };
+}
+
+
+function normalizeQuestStatus(value) {
+  const normalized = String(value || "").trim();
+  const allowed = new Set([
+    "available",
+    "active",
+    "ready_to_turn_in",
+    "completed",
+    "claimed"
+  ]);
+
+  if (!allowed.has(normalized)) {
+    return "available";
+  }
+
+  return normalized;
+}
+
+function normalizeQuestEventType(value) {
+  const normalized = String(value || "").trim();
+  const allowed = new Set([
+    "move_count",
+    "kill_enemy",
+    "talk_to_npc"
+  ]);
+
+  if (!allowed.has(normalized)) {
+    return "";
+  }
+
+  return normalized;
+}
+
+function normalizeQuestTargetId(value) {
+  return String(value || "").trim();
+}
+
+async function getQuestDefinitionsForNpcMap(mapId, npcId) {
+  const normalizedMapId = String(mapId || "").trim();
+  const normalizedNpcId = String(npcId || "").trim();
+
+  const { data, error } = await supabase
+    .from("quest_definitions")
+    .select("*")
+    .eq("map_id", normalizedMapId)
+    .eq("npc_id", normalizedNpcId)
+    .eq("is_active", true)
+    .order("quest_order", { ascending: true });
+
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+}
+
+async function getQuestObjectivesByQuestIds(questIds = []) {
+  const normalizedIds = Array.isArray(questIds)
+    ? questIds.map((id) => String(id || "").trim()).filter((id) => id.length > 0)
+    : [];
+
+  if (normalizedIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("quest_objectives")
+    .select("*")
+    .in("quest_id", normalizedIds)
+    .order("sort_order", { ascending: true });
+
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+}
+
+async function getPlayerQuestRows(playerName, questIds = null) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  if (!normalizedPlayerName) return [];
+
+  let query = supabase
+    .from("player_quests")
+    .select("*")
+    .eq("player_name", normalizedPlayerName);
+
+  if (Array.isArray(questIds) && questIds.length > 0) {
+    query = query.in("quest_id", questIds);
+  }
+
+  const { data, error } = await query;
+
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+}
+
+async function getPlayerQuestObjectiveRows(playerName, questIds = null) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  if (!normalizedPlayerName) return [];
+
+  let query = supabase
+    .from("player_quest_objectives")
+    .select("*")
+    .eq("player_name", normalizedPlayerName);
+
+  if (Array.isArray(questIds) && questIds.length > 0) {
+    query = query.in("quest_id", questIds);
+  }
+
+  const { data, error } = await query;
+
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+}
+
+async function ensureQuestAvailabilityForPlayer(playerName, mapId, npcId) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  const definitions = await getQuestDefinitionsForNpcMap(mapId, npcId);
+
+  if (definitions.length === 0) return;
+
+  const questIds = definitions.map((q) => q.quest_id);
+  const playerRows = await getPlayerQuestRows(normalizedPlayerName, questIds);
+
+  if (playerRows.length === 0) {
+    const firstQuest = definitions[0];
+
+    const { error } = await supabase
+      .from("player_quests")
+      .insert({
+        player_name: normalizedPlayerName,
+        quest_id: firstQuest.quest_id,
+        status: "available",
+        started_at: null,
+        completed_at: null,
+        claimed_at: null
+      });
+
+    if (error) throw error;
+    return;
+  }
+
+  const claimedSet = new Set(
+    playerRows
+      .filter((row) => normalizeQuestStatus(row.status) === "claimed")
+      .map((row) => row.quest_id)
+  );
+
+  for (const definition of definitions) {
+    const existing = playerRows.find((row) => row.quest_id === definition.quest_id);
+    if (existing) continue;
+
+    const previousQuest = definitions.find((q) => q.next_quest_id === definition.quest_id);
+
+    if (!previousQuest || claimedSet.has(previousQuest.quest_id)) {
+      const { error } = await supabase
+        .from("player_quests")
+        .insert({
+          player_name: normalizedPlayerName,
+          quest_id: definition.quest_id,
+          status: "available",
+          started_at: null,
+          completed_at: null,
+          claimed_at: null
+        });
+
+      if (error) throw error;
+    }
+
+    break;
+  }
+}
+
+function buildQuestStatePayloadFromRows(playerName, mapId, npcId, definitions, playerQuestRows, objectiveRows, playerObjectiveRows) {
+  const playerQuestMap = new Map(
+    playerQuestRows.map((row) => [String(row.quest_id), row])
+  );
+
+  const objectiveMap = new Map();
+  for (const objective of objectiveRows) {
+    const questId = String(objective.quest_id);
+    if (!objectiveMap.has(questId)) {
+      objectiveMap.set(questId, []);
+    }
+    objectiveMap.get(questId).push(objective);
+  }
+
+  const playerObjectiveMap = new Map();
+  for (const row of playerObjectiveRows) {
+    playerObjectiveMap.set(
+      `${row.quest_id}::${row.objective_id}`,
+      row
+    );
+  }
+
+  const quests = definitions.map((definition) => {
+    const questId = String(definition.quest_id);
+    const playerQuest = playerQuestMap.get(questId);
+
+    const objectives = (objectiveMap.get(questId) || []).map((objective) => {
+      const playerObjective = playerObjectiveMap.get(`${questId}::${objective.objective_id}`);
+
+      return {
+        objective_id: String(objective.objective_id),
+        objective_type: String(objective.objective_type),
+        target_id: String(objective.target_id || ""),
+        target_quantity: Number(objective.target_quantity || 1),
+        current_quantity: Number(playerObjective?.current_quantity || 0),
+        is_completed: Boolean(playerObjective?.is_completed || false),
+        sort_order: Number(objective.sort_order || 0)
+      };
+    });
+
+    return {
+      quest_id: questId,
+      quest_name: String(definition.quest_name || ""),
+      description: String(definition.description || ""),
+      map_id: String(definition.map_id || ""),
+      npc_id: String(definition.npc_id || ""),
+      quest_order: Number(definition.quest_order || 0),
+      next_quest_id: String(definition.next_quest_id || ""),
+      reward_xp: Number(definition.reward_xp || 0),
+      reward_gold: Number(definition.reward_gold || 0),
+      reward_gems: Number(definition.reward_gems || 0),
+      reward_skulls: Number(definition.reward_skulls || 0),
+      status: normalizeQuestStatus(playerQuest?.status || "locked"),
+      started_at: playerQuest?.started_at || null,
+      completed_at: playerQuest?.completed_at || null,
+      claimed_at: playerQuest?.claimed_at || null,
+      objectives
+    };
+  });
+
+  const currentQuest =
+    quests.find((q) => q.status === "active") ||
+    quests.find((q) => q.status === "ready_to_turn_in") ||
+    quests.find((q) => q.status === "available") ||
+    null;
+
+  return {
+    type: "quest_state",
+    player_name: String(playerName || "").trim(),
+    map_id: String(mapId || "").trim(),
+    npc_id: String(npcId || "").trim(),
+    current_quest: currentQuest,
+    quests
+  };
+}
+
+async function buildPlayerQuestStatePayload(playerName, mapId, npcId) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  const normalizedMapId = String(mapId || "").trim();
+  const normalizedNpcId = String(npcId || "").trim();
+
+  await ensureQuestAvailabilityForPlayer(normalizedPlayerName, normalizedMapId, normalizedNpcId);
+
+  const definitions = await getQuestDefinitionsForNpcMap(normalizedMapId, normalizedNpcId);
+  const questIds = definitions.map((q) => q.quest_id);
+
+  const playerQuestRows = await getPlayerQuestRows(normalizedPlayerName, questIds);
+  const objectiveRows = await getQuestObjectivesByQuestIds(questIds);
+  const playerObjectiveRows = await getPlayerQuestObjectiveRows(normalizedPlayerName, questIds);
+
+  return buildQuestStatePayloadFromRows(
+    normalizedPlayerName,
+    normalizedMapId,
+    normalizedNpcId,
+    definitions,
+    playerQuestRows,
+    objectiveRows,
+    playerObjectiveRows
+  );
+}
+
+async function acceptQuestForNpc(playerName, mapId, npcId) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  const normalizedMapId = String(mapId || "").trim();
+  const normalizedNpcId = String(npcId || "").trim();
+
+  await ensureQuestAvailabilityForPlayer(normalizedPlayerName, normalizedMapId, normalizedNpcId);
+
+  const definitions = await getQuestDefinitionsForNpcMap(normalizedMapId, normalizedNpcId);
+  const questIds = definitions.map((q) => q.quest_id);
+  const playerQuestRows = await getPlayerQuestRows(normalizedPlayerName, questIds);
+
+  const blockingQuest = playerQuestRows.find((row) => {
+    const status = normalizeQuestStatus(row.status);
+    return status === "active" || status === "ready_to_turn_in";
+  });
+
+  if (blockingQuest) {
+    return {
+      ok: false,
+      reason: "QUEST_ALREADY_IN_PROGRESS",
+      quest_id: blockingQuest.quest_id
+    };
+  }
+
+  const availableQuest = definitions.find((definition) => {
+    const row = playerQuestRows.find((q) => q.quest_id === definition.quest_id);
+    return row && normalizeQuestStatus(row.status) === "available";
+  });
+
+  if (!availableQuest) {
+    return {
+      ok: false,
+      reason: "NO_AVAILABLE_QUEST"
+    };
+  }
+
+  const nowIso = new Date().toISOString();
+
+  const { error: updateQuestError } = await supabase
+    .from("player_quests")
+    .update({
+      status: "active",
+      started_at: nowIso,
+      updated_at: nowIso
+    })
+    .eq("player_name", normalizedPlayerName)
+    .eq("quest_id", availableQuest.quest_id);
+
+  if (updateQuestError) throw updateQuestError;
+
+  const objectives = await getQuestObjectivesByQuestIds([availableQuest.quest_id]);
+
+  if (objectives.length > 0) {
+    const objectiveRows = objectives.map((objective) => ({
+      player_name: normalizedPlayerName,
+      quest_id: availableQuest.quest_id,
+      objective_id: String(objective.objective_id),
+      current_quantity: 0,
+      target_quantity: Number(objective.target_quantity || 1),
+      is_completed: false,
+      updated_at: nowIso
+    }));
+
+    const { error: upsertObjectivesError } = await supabase
+      .from("player_quest_objectives")
+      .upsert(objectiveRows, {
+        onConflict: "player_name,quest_id,objective_id"
+      });
+
+    if (upsertObjectivesError) throw upsertObjectivesError;
+  }
+
+  return {
+    ok: true,
+    quest_id: availableQuest.quest_id
+  };
+}
+
+async function claimQuestRewards(playerName, mapId, npcId, explicitQuestId = "") {
+  const normalizedPlayerName = String(playerName || "").trim();
+  const normalizedMapId = String(mapId || "").trim();
+  const normalizedNpcId = String(npcId || "").trim();
+  const normalizedQuestId = String(explicitQuestId || "").trim();
+
+  const definitions = await getQuestDefinitionsForNpcMap(normalizedMapId, normalizedNpcId);
+  const questIds = definitions.map((q) => q.quest_id);
+  const playerQuestRows = await getPlayerQuestRows(normalizedPlayerName, questIds);
+
+  const readyQuestRow = playerQuestRows.find((row) => {
+    const status = normalizeQuestStatus(row.status);
+    if (status !== "ready_to_turn_in") return false;
+    if (normalizedQuestId && row.quest_id !== normalizedQuestId) return false;
+    return true;
+  });
+
+  if (!readyQuestRow) {
+    return {
+      ok: false,
+      reason: "NO_READY_QUEST"
+    };
+  }
+
+  const definition = definitions.find((q) => q.quest_id === readyQuestRow.quest_id);
+  if (!definition) {
+    return {
+      ok: false,
+      reason: "QUEST_DEFINITION_NOT_FOUND"
+    };
+  }
+
+  const rewardXp = Number(definition.reward_xp || 0);
+  const rewardGold = Number(definition.reward_gold || 0);
+  const rewardGems = Number(definition.reward_gems || 0);
+  const rewardSkulls = Number(definition.reward_skulls || 0);
+
+  const current = await getOrCreatePlayerCharacter(normalizedPlayerName);
+
+  const newTotalXp = Math.max(0, Number(current.player_total_xp || 0) + rewardXp);
+  const newLevel = calculateLevelFromTotalXp(newTotalXp);
+  const totalEarnedPoints = getTotalAttributePointsEarnedForLevel(newLevel);
+  const spentPoints = calculateSpentAttributePoints(current);
+  const availablePoints = Math.max(0, totalEarnedPoints - spentPoints);
+
+  const updatedCharacter = await savePlayerCharacter(normalizedPlayerName, {
+    gold: Math.max(0, Number(current.gold || 0) + rewardGold),
+    gems: Math.max(0, Number(current.gems || 0) + rewardGems),
+    skulls: Math.max(0, Number(current.skulls || 0) + rewardSkulls),
+    player_total_xp: newTotalXp,
+    player_level: newLevel,
+    attribute_points_available: availablePoints
+  });
+
+  const nowIso = new Date().toISOString();
+
+  const { error: updateQuestError } = await supabase
+    .from("player_quests")
+    .update({
+      status: "claimed",
+      claimed_at: nowIso,
+      updated_at: nowIso
+    })
+    .eq("player_name", normalizedPlayerName)
+    .eq("quest_id", readyQuestRow.quest_id);
+
+  if (updateQuestError) throw updateQuestError;
+
+  if (definition.next_quest_id) {
+    const existingNext = await getPlayerQuestRows(normalizedPlayerName, [definition.next_quest_id]);
+
+    if (!existingNext || existingNext.length === 0) {
+      const { error: insertNextError } = await supabase
+        .from("player_quests")
+        .insert({
+          player_name: normalizedPlayerName,
+          quest_id: String(definition.next_quest_id),
+          status: "available",
+          started_at: null,
+          completed_at: null,
+          claimed_at: null
+        });
+
+      if (insertNextError) throw insertNextError;
+    }
+  }
+
+  return {
+    ok: true,
+    quest_id: readyQuestRow.quest_id,
+    rewards: {
+      xp: rewardXp,
+      gold: rewardGold,
+      gems: rewardGems,
+      skulls: rewardSkulls
+    },
+    character: updatedCharacter
+  };
+}
+
+async function progressQuestEvent(playerName, eventType, targetId, amount = 1) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  const normalizedEventType = normalizeQuestEventType(eventType);
+  const normalizedTargetId = normalizeQuestTargetId(targetId);
+  const normalizedAmount = Math.max(1, Number(amount || 1));
+
+  if (!normalizedPlayerName || !normalizedEventType || !normalizedTargetId) {
+    return {
+      ok: false,
+      reason: "INVALID_PROGRESS_EVENT"
+    };
+  }
+
+  const activeQuestRows = await getPlayerQuestRows(normalizedPlayerName);
+  const activeQuestIds = activeQuestRows
+    .filter((row) => normalizeQuestStatus(row.status) === "active")
+    .map((row) => String(row.quest_id));
+
+  if (activeQuestIds.length === 0) {
+    return {
+      ok: true,
+      affected_quests: []
+    };
+  }
+
+  const { data: matchingObjectives, error: objectivesError } = await supabase
+    .from("quest_objectives")
+    .select("*")
+    .in("quest_id", activeQuestIds)
+    .eq("objective_type", normalizedEventType)
+    .eq("target_id", normalizedTargetId);
+
+  if (objectivesError) throw objectivesError;
+
+  if (!matchingObjectives || matchingObjectives.length === 0) {
+    return {
+      ok: true,
+      affected_quests: []
+    };
+  }
+
+  const affectedQuestIds = new Set();
+
+  for (const objective of matchingObjectives) {
+    const objectiveId = String(objective.objective_id);
+    const questId = String(objective.quest_id);
+    const targetQuantity = Math.max(1, Number(objective.target_quantity || 1));
+
+    const { data: progressRow, error: progressFetchError } = await supabase
+      .from("player_quest_objectives")
+      .select("*")
+      .eq("player_name", normalizedPlayerName)
+      .eq("quest_id", questId)
+      .eq("objective_id", objectiveId)
+      .maybeSingle();
+
+    if (progressFetchError) throw progressFetchError;
+    if (!progressRow) continue;
+
+    const newQuantity = Math.min(
+      targetQuantity,
+      Number(progressRow.current_quantity || 0) + normalizedAmount
+    );
+
+    const isCompleted = newQuantity >= targetQuantity;
+
+    const { error: updateProgressError } = await supabase
+      .from("player_quest_objectives")
+      .update({
+        current_quantity: newQuantity,
+        is_completed: isCompleted,
+        updated_at: new Date().toISOString()
+      })
+      .eq("player_name", normalizedPlayerName)
+      .eq("quest_id", questId)
+      .eq("objective_id", objectiveId);
+
+    if (updateProgressError) throw updateProgressError;
+
+    affectedQuestIds.add(questId);
+  }
+
+  for (const questId of affectedQuestIds) {
+    const { data: objectiveProgressRows, error: objectiveProgressError } = await supabase
+      .from("player_quest_objectives")
+      .select("*")
+      .eq("player_name", normalizedPlayerName)
+      .eq("quest_id", questId);
+
+    if (objectiveProgressError) throw objectiveProgressError;
+
+    const allCompleted =
+      Array.isArray(objectiveProgressRows) &&
+      objectiveProgressRows.length > 0 &&
+      objectiveProgressRows.every((row) => Boolean(row.is_completed));
+
+    if (allCompleted) {
+      const { error: completeQuestError } = await supabase
+        .from("player_quests")
+        .update({
+          status: "ready_to_turn_in",
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq("player_name", normalizedPlayerName)
+        .eq("quest_id", questId)
+        .eq("status", "active");
+
+      if (completeQuestError) throw completeQuestError;
+    }
+  }
+
+  return {
+    ok: true,
+    affected_quests: Array.from(affectedQuestIds)
+  };
+}
+
+function canonicalQuestTargetIdFromDisplayName(displayName) {
+  const raw = String(displayName || "").trim();
+  if (!raw) return "";
+
+  const stripped = raw.replace(/\s+(A|B|C|D|Alpha|Beta|Gamma)$/i, "");
+  return stripped.replace(/\s+/g, "_");
+}
+
+function buildQuestKillProgressEntriesFromCombat(combat) {
+  if (!combat || !Array.isArray(combat.enemy_units)) {
+    return [];
+  }
+
+  const counts = new Map();
+
+  for (const unit of combat.enemy_units) {
+    if (!unit) continue;
+    if (unit.is_alive === true || unit.alive === true) continue;
+
+    const targetId = canonicalQuestTargetIdFromDisplayName(unit.display_name);
+    if (!targetId) continue;
+
+    counts.set(targetId, Number(counts.get(targetId) || 0) + 1);
+  }
+
+  return Array.from(counts.entries()).map(([target_id, amount]) => ({
+    target_id,
+    amount
+  }));
 }
 
 
@@ -4054,6 +4745,22 @@ async function finishCombatAndScheduleCleanup(combat) {
 
     if (combat.status === "players_win") {
       rewards = buildEncounterRewards(combat.encounter_id, combat.tile_id);
+
+      const killEntries = buildQuestKillProgressEntriesFromCombat(combat);
+
+      for (const unit of Array.isArray(combat.player_units) ? combat.player_units : []) {
+        const playerName = String(unit?.player_name || "").trim();
+        if (!playerName) continue;
+
+        for (const entry of killEntries) {
+          await progressQuestEvent(
+            playerName,
+            "kill_enemy",
+            entry.target_id,
+            entry.amount
+          );
+        }
+      }
 
       if (rewards && Array.isArray(rewards.drops) && rewards.drops.length > 0) {
         grantedDropsSummary = await grantCombatDropsToParty(combat, rewards);
