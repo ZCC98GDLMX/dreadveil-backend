@@ -1711,294 +1711,6 @@ async function buildPlayerCombatUnit(playerName, overrides = {}) {
 }
 
 
-function buildEncounterRewards(encounterId, tileId) {
-  const rewardsByTile = {
-    ct_1: {
-      Furnace_Hound: {
-        xp: 180,
-        gold: 95,
-        skulls: 0,
-        gems: 0,
-        drops: [
-          {
-            item_id: "corrupted_core",
-            name: "Corrupted Core",
-            quantity: 1,
-            stackable: true,
-            type: "Material",
-            icon_path: "res://art/Items/Materials/CorruptedCore.png"
-          }
-        ],
-        mission_tags: ["furnace_hound_kill"]
-      },
-
-      Cinder_Footman: {
-        xp: 120,
-        gold: 60,
-        skulls: 0,
-        gems: 0,
-        drops: [],
-        mission_tags: ["cinder_footman_kill"]
-      },
-
-      Bastion_Halberdier: {
-        xp: 180,
-        gold: 95,
-        skulls: 0,
-        gems: 0,
-        drops: [
-          {
-            item_id: "bastion_shard",
-            name: "Bastion Shard",
-            quantity: 1,
-            stackable: true,
-            type: "Material",
-            icon_path: "res://art/Items/Materials/BastionShard.png"
-          }
-        ],
-        mission_tags: ["bastion_halberdier_kill"]
-      },
-
-      Pyre_Archer: {
-        xp: 190,
-        gold: 105,
-        skulls: 0,
-        gems: 0,
-        drops: [
-          {
-            item_id: "charred_arrowhead",
-            name: "Charred Arrowhead",
-            quantity: 1,
-            stackable: true,
-            type: "Material",
-            icon_path: "res://art/Items/Materials/CharredArrowhead.png"
-          }
-        ],
-        mission_tags: ["pyre_archer_kill"]
-      },
-
-      Ashen_Chaplain: {
-        xp: 210,
-        gold: 115,
-        skulls: 0,
-        gems: 0,
-        drops: [
-          {
-            item_id: "ashen_reliquary_fragment",
-            name: "Ashen Reliquary Fragment",
-            quantity: 1,
-            stackable: true,
-            type: "Material",
-            icon_path: "res://art/Items/Materials/AshenReliquaryFragment.png"
-          }
-        ],
-        mission_tags: ["ashen_chaplain_kill"]
-      }
-    },
-
-    ct_2: {
-      Blackpike_Sentinel: {
-        xp: 150,
-        gold: 80,
-        skulls: 0,
-        gems: 0,
-        drops: [
-          {
-            item_id: "blackpike_fragment",
-            name: "Blackpike Fragment",
-            quantity: 1,
-            stackable: true,
-            type: "Material",
-            icon_path: "res://art/Items/Materials/BlackpikeFragment.png"
-          }
-        ],
-        mission_tags: ["blackpike_sentinel_kill"]
-      },
-
-      Chain_Hexer: {
-        xp: 165,
-        gold: 90,
-        skulls: 0,
-        gems: 0,
-        drops: [
-          {
-            item_id: "hexer_chain",
-            name: "Hexer Chain",
-            quantity: 1,
-            stackable: true,
-            type: "Material",
-            icon_path: "res://art/Items/Materials/HexerChain.png"
-          }
-        ],
-        mission_tags: ["chain_hexer_kill"]
-      },
-
-      Grave_Bombard: {
-        xp: 175,
-        gold: 95,
-        skulls: 0,
-        gems: 0,
-        drops: [
-          {
-            item_id: "bombard_core",
-            name: "Bombard Core",
-            quantity: 1,
-            stackable: true,
-            type: "Material",
-            icon_path: "res://art/Items/Materials/BombardCore.png"
-          }
-        ],
-        mission_tags: ["grave_bombard_kill"]
-      },
-
-      Oath_Reaper: {
-        xp: 180,
-        gold: 105,
-        skulls: 0,
-        gems: 0,
-        drops: [
-          {
-            item_id: "reaper_talon",
-            name: "Reaper Talon",
-            quantity: 1,
-            stackable: true,
-            type: "Material",
-            icon_path: "res://art/Items/Materials/ReaperTalon.png"
-          }
-        ],
-        mission_tags: ["oath_reaper_kill"]
-      },
-
-      Carrion_Alchemist: {
-        xp: 190,
-        gold: 115,
-        skulls: 0,
-        gems: 0,
-        drops: [
-          {
-            item_id: "carrion_vial",
-            name: "Carrion Vial",
-            quantity: 1,
-            stackable: true,
-            type: "Material",
-            icon_path: "res://art/Items/Materials/CarrionVial.png"
-          }
-        ],
-        mission_tags: ["carrion_alchemist_kill"]
-      }
-    },
-
-    ct_3: {
-      Dread_Marshal: {
-        xp: 220,
-        gold: 130,
-        skulls: 0,
-        gems: 0,
-        drops: [
-          {
-            item_id: "dread_seal",
-            name: "Dread Seal",
-            quantity: 1,
-            stackable: true,
-            type: "Material",
-            icon_path: "res://art/Items/Materials/DreadSeal.png"
-          }
-        ],
-        mission_tags: ["dread_marshal_kill"]
-      },
-
-      Gloom_Eye: {
-        xp: 210,
-        gold: 120,
-        skulls: 0,
-        gems: 0,
-        drops: [
-          {
-            item_id: "gloom_orb",
-            name: "Gloom Orb",
-            quantity: 1,
-            stackable: true,
-            type: "Material",
-            icon_path: "res://art/Items/Materials/GloomOrb.png"
-          }
-        ],
-        mission_tags: ["gloom_eye_kill"]
-      },
-
-      Ruin_Butcher: {
-        xp: 215,
-        gold: 125,
-        skulls: 0,
-        gems: 0,
-        drops: [
-          {
-            item_id: "butcher_hook",
-            name: "Butcher Hook",
-            quantity: 1,
-            stackable: true,
-            type: "Material",
-            icon_path: "res://art/Items/Materials/ButcherHook.png"
-          }
-        ],
-        mission_tags: ["ruin_butcher_kill"]
-      },
-
-      Catacomb_Beast: {
-        xp: 225,
-        gold: 135,
-        skulls: 0,
-        gems: 0,
-        drops: [
-          {
-            item_id: "catacomb_fang",
-            name: "Catacomb Fang",
-            quantity: 1,
-            stackable: true,
-            type: "Material",
-            icon_path: "res://art/Items/Materials/CatacombFang.png"
-          }
-        ],
-        mission_tags: ["catacomb_beast_kill"]
-      },
-
-      Warden_Exarch: {
-        xp: 260,
-        gold: 160,
-        skulls: 0,
-        gems: 0,
-        drops: [
-          {
-            item_id: "exarch_emblem",
-            name: "Exarch Emblem",
-            quantity: 1,
-            stackable: true,
-            type: "Material",
-            icon_path: "res://art/Items/Materials/ExarchEmblem.png"
-          }
-        ],
-        mission_tags: ["warden_exarch_kill"]
-      }
-    }
-  };
-
-  const tileRewards = rewardsByTile[tileId] || {};
-  const reward = tileRewards[encounterId];
-
-  if (!reward) {
-    return {
-      xp: 0,
-      gold: 0,
-      skulls: 0,
-      gems: 0,
-      drops: [],
-      mission_tags: []
-    };
-  }
-
-  return JSON.parse(JSON.stringify(reward));
-}
-
-
 function buildEnemyCombatGroup(encounterId, tileId) {
   const encounters = {
     ct_1: {
@@ -3088,9 +2800,15 @@ function buildEnemyCombatGroup(encounterId, tileId) {
   };
 
   const group = encounters?.[tileId]?.[encounterId];
-  if (!group) return [];
+if (!group) return [];
 
-  return JSON.parse(JSON.stringify(group));
+return JSON.parse(JSON.stringify(group)).map((unit) => ({
+  ...unit,
+  team: "enemies",
+  is_player: false,
+  is_enemy: true,
+  player_name: ""
+}));
 }
 
 async function createPartyCombatInstance(
@@ -3159,17 +2877,32 @@ async function createPartyCombatInstance(
       target_strategy: memberCombatConfig.target_strategy
     });
 
-    playerUnits.push(unit);
+    playerUnits.push({
+      ...unit,
+      unit_type: "player",
+      team: "players",
+      is_player: true,
+      is_enemy: false
+    });
   }
 
   console.log("CREATE COMBAT INSTANCE -> playerUnits built", playerUnits);
 
-  const enemyUnits = buildEnemyCombatGroup(encounterId, tileId);
-  console.log("CREATE COMBAT INSTANCE -> enemyUnits built", enemyUnits);
+  const rawEnemyUnits = buildEnemyCombatGroup(encounterId, tileId);
+  console.log("CREATE COMBAT INSTANCE -> enemyUnits built", rawEnemyUnits);
 
-  if (!enemyUnits || enemyUnits.length === 0) {
+  if (!rawEnemyUnits || rawEnemyUnits.length === 0) {
     throw new Error("Encounter not found for tile");
   }
+
+  const enemyUnits = rawEnemyUnits.map((unit) => ({
+    ...unit,
+    unit_type: "enemy",
+    team: "enemies",
+    is_player: false,
+    is_enemy: true,
+    player_name: ""
+  }));
 
   const combatId = createCombatId();
 
@@ -3202,126 +2935,51 @@ async function createPartyCombatInstance(
   return combatInstance;
 }
 
-async function createPartyCombatInstance(
-  partyId,
-  encounterId,
-  tileId,
-  startedBy,
-  starterConfig = {}
-) {
-  console.log("CREATE COMBAT INSTANCE -> START", {
-    partyId,
-    encounterId,
-    tileId,
-    startedBy,
-    starterConfig
-  });
 
-  if (!partyId || !encounterId || !tileId || !startedBy) {
-    throw new Error("Missing combat creation parameters");
+function normalizeCombatUnitTeamMeta(unit = {}) {
+  const rawUnitType = String(unit.unit_type || "").trim().toLowerCase();
+  const rawPlayerName = String(unit.player_name || "").trim();
+  const rawTeam = String(unit.team || "").trim().toLowerCase();
+
+  const inferredIsPlayer =
+    unit.is_player === true ||
+    rawUnitType === "player" ||
+    rawTeam === "players" ||
+    rawPlayerName !== "";
+
+  const inferredIsEnemy =
+    unit.is_enemy === true ||
+    rawUnitType === "enemy" ||
+    rawTeam === "enemies";
+
+  let normalizedTeam = rawTeam;
+  if (!normalizedTeam) {
+    normalizedTeam = inferredIsPlayer ? "players" : "enemies";
   }
 
-  const { data: membersRows, error: membersError } = await supabase
-    .from("party_members")
-    .select("player_name")
-    .eq("party_id", partyId)
-    .order("joined_at", { ascending: true });
+  const normalizedUnitType = inferredIsPlayer ? "player" : "enemy";
 
-  if (membersError) throw membersError;
-  if (!membersRows || membersRows.length === 0) {
-    throw new Error("Party has no members");
-  }
-
-  console.log("CREATE COMBAT INSTANCE -> membersRows", membersRows);
-
-  const playerUnits = [];
-
-  for (const row of membersRows) {
-    const memberName = row.player_name;
-    const isStarter = memberName === startedBy;
-
-    let memberCombatConfig = await getResolvedPlayerCombatConfig(memberName);
-
-    if (isStarter) {
-      const starterSequence = normalizeAttackSequence(starterConfig.attack_sequence);
-      const starterTargetStrategy = normalizeTargetStrategy(starterConfig.target_strategy);
-
-      memberCombatConfig = {
-        attack_sequence:
-          starterSequence.length > 0
-            ? starterSequence
-            : memberCombatConfig.attack_sequence,
-        target_strategy: starterTargetStrategy || memberCombatConfig.target_strategy
-      };
-
-      await upsertPlayerCombatConfig(memberName, memberCombatConfig);
-      memberCombatConfig = await getResolvedPlayerCombatConfig(memberName);
-    }
-
-    console.log("CREATE COMBAT INSTANCE -> member combat config", {
-      memberName,
-      memberCombatConfig
-    });
-
-    const unit = await buildPlayerCombatUnit(memberName, {
-      attack_sequence: memberCombatConfig.attack_sequence,
-      target_strategy: memberCombatConfig.target_strategy
-    });
-
-    playerUnits.push(unit);
-  }
-
-  console.log("CREATE COMBAT INSTANCE -> playerUnits built", playerUnits);
-
-  const enemyUnits = buildEnemyCombatGroup(encounterId, tileId);
-  console.log("CREATE COMBAT INSTANCE -> enemyUnits built", enemyUnits);
-
-  if (!enemyUnits || enemyUnits.length === 0) {
-    throw new Error("Encounter not found for tile");
-  }
-
-  const combatId = createCombatId();
-
-  const combatInstance = {
-    combat_id: combatId,
-    party_id: partyId,
-    tile_id: tileId,
-    encounter_id: encounterId,
-    status: "active",
-    round: 0,
-    turn_phase: "players",
-    started_by: startedBy,
-    player_units: playerUnits,
-    enemy_units: enemyUnits,
-    resolved_actions_log: [],
-    auto_loop_started: false,
-    round_timer: null,
-    created_at: new Date().toISOString()
+  return {
+    unit_type: normalizedUnitType,
+    team: normalizedTeam,
+    is_player: inferredIsPlayer,
+    is_enemy: !inferredIsPlayer && (inferredIsEnemy || normalizedTeam === "enemies")
   };
-
-  combatInstances.set(combatId, combatInstance);
-
-  for (const unit of playerUnits) {
-    if (unit.player_name) {
-      playerCombatIndex.set(unit.player_name, combatId);
-    }
-  }
-
-  console.log("CREATE COMBAT INSTANCE -> DONE", combatId);
-  return combatInstance;
 }
 
 function sanitizeCombatUnit(unit) {
   if (!unit) return null;
 
+  const meta = normalizeCombatUnitTeamMeta(unit);
+
   return {
-    unit_id: unit.unit_id || "",
-    player_name: unit.player_name || "",
-    unit_type: unit.unit_type || (unit.is_player ? "player" : "enemy"),
-    display_name: unit.display_name || unit.player_name || "Unknown",
-    team: unit.team || "",
-    is_player: Boolean(unit.is_player),
-    is_enemy: Boolean(unit.is_enemy),
+    unit_id: String(unit.unit_id || "").trim(),
+    player_name: String(unit.player_name || "").trim(),
+    unit_type: meta.unit_type,
+    display_name: String(unit.display_name || unit.player_name || "Unknown").trim(),
+    team: meta.team,
+    is_player: meta.is_player,
+    is_enemy: meta.is_enemy,
     alive: Boolean(unit.alive !== undefined ? unit.alive : unit.is_alive),
     is_alive: Boolean(unit.is_alive !== undefined ? unit.is_alive : unit.alive),
 
