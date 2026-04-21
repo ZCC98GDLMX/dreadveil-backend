@@ -388,85 +388,85 @@ if (type === "identify") {
       }
 
             if (type === "character_get") {
-        const playerName = String(data.player_name || client?.player_name || "").trim();
+  const playerName = String(data.player_name || client?.player_name || "").trim();
 
-        if (!playerName) {
-          sendWs(ws, { type: "error", message: "Missing player_name" });
-          return;
-        }
+  if (!playerName) {
+    sendWs(ws, { type: "error", message: "Missing player_name" });
+    return;
+  }
 
-              if (type === "inventory_get") {
-        const playerName = String(data.player_name || client?.player_name || "").trim();
+  const character = await getOrCreatePlayerCharacter(playerName);
+  sendWs(ws, buildCharacterStatePayload(character));
+  return;
+}
 
-        if (!playerName) {
-          sendWs(ws, { type: "inventory_error", message: "Missing player_name" });
-          return;
-        }
+if (type === "inventory_get") {
+  const playerName = String(data.player_name || client?.player_name || "").trim();
 
-        await sendInventoryState(ws, playerName);
-        return;
-      }
+  if (!playerName) {
+    sendWs(ws, { type: "inventory_error", message: "Missing player_name" });
+    return;
+  }
 
-      if (type === "inventory_equip_item") {
-        const playerName = String(data.player_name || client?.player_name || "").trim();
-        const itemInstanceId = String(data.item_instance_id || "").trim();
+  await sendInventoryState(ws, playerName);
+  return;
+}
 
-        if (!playerName || !itemInstanceId) {
-          sendWs(ws, {
-            type: "inventory_error",
-            message: "Missing inventory_equip_item fields"
-          });
-          return;
-        }
+if (type === "inventory_equip_item") {
+  const playerName = String(data.player_name || client?.player_name || "").trim();
+  const itemInstanceId = String(data.item_instance_id || "").trim();
 
-        const result = await equipItemInstance(playerName, itemInstanceId);
+  if (!playerName || !itemInstanceId) {
+    sendWs(ws, {
+      type: "inventory_error",
+      message: "Missing inventory_equip_item fields"
+    });
+    return;
+  }
 
-        if (!result?.ok) {
-          sendWs(ws, {
-            type: "inventory_error",
-            player_name: playerName,
-            action: "inventory_equip_item",
-            reason: String(result?.reason || "EQUIP_FAILED")
-          });
-          return;
-        }
+  const result = await equipItemInstance(playerName, itemInstanceId);
 
-        await sendInventoryState(ws, playerName);
-        return;
-      }
+  if (!result?.ok) {
+    sendWs(ws, {
+      type: "inventory_error",
+      player_name: playerName,
+      action: "inventory_equip_item",
+      reason: String(result?.reason || "EQUIP_FAILED")
+    });
+    return;
+  }
 
-      if (type === "inventory_unequip_item") {
-        const playerName = String(data.player_name || client?.player_name || "").trim();
-        const slotKey = String(data.slot_key || "").trim();
+  await sendInventoryState(ws, playerName);
+  return;
+}
 
-        if (!playerName || !slotKey) {
-          sendWs(ws, {
-            type: "inventory_error",
-            message: "Missing inventory_unequip_item fields"
-          });
-          return;
-        }
+if (type === "inventory_unequip_item") {
+  const playerName = String(data.player_name || client?.player_name || "").trim();
+  const slotKey = String(data.slot_key || "").trim();
 
-        const result = await unequipItemFromSlot(playerName, slotKey);
+  if (!playerName || !slotKey) {
+    sendWs(ws, {
+      type: "inventory_error",
+      message: "Missing inventory_unequip_item fields"
+    });
+    return;
+  }
 
-        if (!result?.ok) {
-          sendWs(ws, {
-            type: "inventory_error",
-            player_name: playerName,
-            action: "inventory_unequip_item",
-            reason: String(result?.reason || "UNEQUIP_FAILED")
-          });
-          return;
-        }
+  const result = await unequipItemFromSlot(playerName, slotKey);
 
-        await sendInventoryState(ws, playerName);
-        return;
-      }
+  if (!result?.ok) {
+    sendWs(ws, {
+      type: "inventory_error",
+      player_name: playerName,
+      action: "inventory_unequip_item",
+      reason: String(result?.reason || "UNEQUIP_FAILED")
+    });
+    return;
+  }
 
-        const character = await getOrCreatePlayerCharacter(playerName);
-        sendWs(ws, buildCharacterStatePayload(character));
-        return;
-      }
+  await sendInventoryState(ws, playerName);
+  return;
+}
 
             if (type === "character_gain_rewards") {
         const playerName = String(data.player_name || client?.player_name || "").trim();
