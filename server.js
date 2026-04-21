@@ -1183,6 +1183,108 @@ async function sendInventoryState(ws, playerName) {
   return payload;
 }
 
+async function sendInventoryStateToPlayerByName(playerName) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  if (!normalizedPlayerName) return;
+
+  const targetWs = playerSocketsByName.get(normalizedPlayerName);
+  if (!targetWs) {
+    console.log("INVENTORY STATE SKIPPED -> socket not found for", normalizedPlayerName);
+    return;
+  }
+
+  try {
+    await sendInventoryState(targetWs, normalizedPlayerName);
+  } catch (err) {
+    console.error("SEND INVENTORY STATE TO PLAYER ERROR:", normalizedPlayerName, err);
+  }
+}
+
+async function grantCombatDropsToPlayer(playerName, drops = []) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  if (!normalizedPlayerName) {
+    return {
+      granted: [],
+      failed: []
+    };
+  }
+
+  const granted = [];
+  const failed = [];
+
+  for (const drop of Array.isArray(drops) ? drops : []) {
+    if (!drop || typeof drop !== "object") continue;
+
+    const itemId = String(drop.item_id || "").trim();
+    const quantity = Math.max(1, Number(drop.quantity || 1));
+
+    if (!itemId) {
+      failed.push({
+        ...drop,
+        reason: "MISSING_ITEM_ID"
+      });
+      continue;
+    }
+
+    try {
+      const result = await grantItemToPlayer(normalizedPlayerName, itemId, quantity);
+
+      if (result?.ok) {
+        granted.push({
+          ...drop,
+          quantity
+        });
+      } else {
+        failed.push({
+          ...drop,
+          quantity,
+          reason: String(result?.reason || "GRANT_FAILED")
+        });
+      }
+    } catch (err) {
+      console.error("GRANT COMBAT DROP ERROR:", {
+        playerName: normalizedPlayerName,
+        itemId,
+        quantity,
+        err
+      });
+
+      failed.push({
+        ...drop,
+        quantity,
+        reason: "RPC_ERROR"
+      });
+    }
+  }
+
+  return { granted, failed };
+}
+
+async function grantCombatDropsToParty(combat, rewards) {
+  if (!combat || !rewards || typeof rewards !== "object") {
+    return {
+      per_player: {}
+    };
+  }
+
+  const drops = Array.isArray(rewards.drops) ? rewards.drops : [];
+  const perPlayer = {};
+
+  for (const unit of Array.isArray(combat.player_units) ? combat.player_units : []) {
+    const playerName = String(unit?.player_name || "").trim();
+    if (!playerName) continue;
+
+    const result = await grantCombatDropsToPlayer(playerName, drops);
+    perPlayer[playerName] = result;
+
+    await sendInventoryStateToPlayerByName(playerName);
+  }
+
+  return {
+    per_player: perPlayer
+  };
+}
+
 async function grantItemToPlayer(playerName, itemId, quantity = 1) {
   const normalizedPlayerName = String(playerName || "").trim();
   const normalizedItemId = String(itemId || "").trim();
@@ -3997,21 +4099,39 @@ function buildRoundActionQueue(combat) {
   return queue;
 }
 
-function finishCombatAndScheduleCleanup(combat) {
+async function finishCombatAndScheduleCleanup(combat) {
   if (!combat) return;
 
-  let rewards = null;
+  try {
+    let rewards = null;
+    let grantedDropsSummary = null;
 
-  if (combat.status === "players_win") {
-    rewards = buildEncounterRewards(combat.encounter_id, combat.tile_id);
+    if (combat.status === "players_win") {
+      rewards = buildEncounterRewards(combat.encounter_id, combat.tile_id);
+
+      if (rewards && Array.isArray(rewards.drops) && rewards.drops.length > 0) {
+        grantedDropsSummary = await grantCombatDropsToParty(combat, rewards);
+      }
+    }
+
+    broadcastToParty(combat.party_id, {
+      type: "combat_finished",
+      combat_id: combat.combat_id,
+      result: combat.status,
+      rewards: rewards,
+      granted_drops_summary: grantedDropsSummary
+    });
+  } catch (err) {
+    console.error("FINISH COMBAT ERROR:", err);
+
+    broadcastToParty(combat.party_id, {
+      type: "combat_finished",
+      combat_id: combat.combat_id,
+      result: combat.status,
+      rewards: null,
+      granted_drops_summary: null
+    });
   }
-
-  broadcastToParty(combat.party_id, {
-    type: "combat_finished",
-    combat_id: combat.combat_id,
-    result: combat.status,
-    rewards: rewards
-  });
 
   setTimeout(() => {
     destroyCombatInstance(combat.combat_id);
