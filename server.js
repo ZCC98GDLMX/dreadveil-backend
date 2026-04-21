@@ -395,6 +395,74 @@ if (type === "identify") {
           return;
         }
 
+              if (type === "inventory_get") {
+        const playerName = String(data.player_name || client?.player_name || "").trim();
+
+        if (!playerName) {
+          sendWs(ws, { type: "inventory_error", message: "Missing player_name" });
+          return;
+        }
+
+        await sendInventoryState(ws, playerName);
+        return;
+      }
+
+      if (type === "inventory_equip_item") {
+        const playerName = String(data.player_name || client?.player_name || "").trim();
+        const itemInstanceId = String(data.item_instance_id || "").trim();
+
+        if (!playerName || !itemInstanceId) {
+          sendWs(ws, {
+            type: "inventory_error",
+            message: "Missing inventory_equip_item fields"
+          });
+          return;
+        }
+
+        const result = await equipItemInstance(playerName, itemInstanceId);
+
+        if (!result?.ok) {
+          sendWs(ws, {
+            type: "inventory_error",
+            player_name: playerName,
+            action: "inventory_equip_item",
+            reason: String(result?.reason || "EQUIP_FAILED")
+          });
+          return;
+        }
+
+        await sendInventoryState(ws, playerName);
+        return;
+      }
+
+      if (type === "inventory_unequip_item") {
+        const playerName = String(data.player_name || client?.player_name || "").trim();
+        const slotKey = String(data.slot_key || "").trim();
+
+        if (!playerName || !slotKey) {
+          sendWs(ws, {
+            type: "inventory_error",
+            message: "Missing inventory_unequip_item fields"
+          });
+          return;
+        }
+
+        const result = await unequipItemFromSlot(playerName, slotKey);
+
+        if (!result?.ok) {
+          sendWs(ws, {
+            type: "inventory_error",
+            player_name: playerName,
+            action: "inventory_unequip_item",
+            reason: String(result?.reason || "UNEQUIP_FAILED")
+          });
+          return;
+        }
+
+        await sendInventoryState(ws, playerName);
+        return;
+      }
+
         const character = await getOrCreatePlayerCharacter(playerName);
         sendWs(ws, buildCharacterStatePayload(character));
         return;
@@ -407,6 +475,7 @@ if (type === "identify") {
           sendWs(ws, { type: "error", message: "Missing player_name" });
           return;
         }
+        
 
         const addGold = Number(data.gold || 0);
         const addGems = Number(data.gems || 0);
@@ -951,6 +1020,217 @@ async function savePlayerCharacter(playerName, patch = {}) {
   }
 
   return normalizeCharacterRow(savedRow, playerName);
+}
+
+const BACKPACK_SIZE = 20;
+
+const EQUIPMENT_SLOT_KEYS = [
+  "helmet",
+  "shoulder",
+  "chest",
+  "bracers",
+  "gloves",
+  "left_ring_1",
+  "left_ring_2",
+  "amulet",
+  "cape",
+  "belt",
+  "pants",
+  "boots",
+  "right_ring_1",
+  "right_ring_2",
+  "main_weapon",
+  "secondary_weapon",
+  "backpack",
+  "mount",
+  "pet"
+];
+
+function createEmptyEquippedItems() {
+  const result = {};
+  for (const slotKey of EQUIPMENT_SLOT_KEYS) {
+    result[slotKey] = {};
+  }
+  return result;
+}
+
+function createEmptyBackpackItems() {
+  return Array.from({ length: BACKPACK_SIZE }, () => ({}));
+}
+
+function normalizeInventoryRow(row = {}) {
+  return {
+    item_instance_id: String(row.item_instance_id || "").trim(),
+    player_name: String(row.player_name || "").trim(),
+    item_id: String(row.item_id || "").trim(),
+    location_type: String(row.location_type || "").trim(),
+    location_slot: String(row.location_slot || "").trim(),
+    quantity: Math.max(1, Number(row.quantity || 1)),
+    upgrade_level: Math.max(0, Number(row.upgrade_level || 0)),
+    enchant_stage: Math.max(0, Number(row.enchant_stage || 0)),
+    custom_data: row.custom_data || {},
+
+    name: String(row.name || "").trim(),
+    type: String(row.item_type || "").trim(),
+    equip_slot: String(row.equip_slot || "").trim(),
+    stackable: Boolean(row.stackable),
+    max_stack: Math.max(1, Number(row.max_stack || 1)),
+    price: Math.max(0, Number(row.buy_price || 0)),
+    sell_price: Math.max(0, Number(row.sell_price || 0)),
+    description: String(row.description || "").trim(),
+    icon_path: String(row.icon_path || "").trim(),
+    set_name: String(row.set_name || "").trim(),
+
+    bonus_strength: Math.max(0, Number(row.bonus_strength || 0)),
+    bonus_vitality: Math.max(0, Number(row.bonus_vitality || 0)),
+    bonus_defense: Math.max(0, Number(row.bonus_defense || 0)),
+    bonus_action_points: Math.max(0, Number(row.bonus_action_points || 0)),
+    bonus_armor_penetration: Math.max(0, Number(row.bonus_armor_penetration || 0)),
+    bonus_critical_chance: Math.max(0, Number(row.bonus_critical_chance || 0)),
+    bonus_lifesteal: Math.max(0, Number(row.bonus_lifesteal || 0))
+  };
+}
+
+function buildClientItemPayload(row = {}) {
+  const normalized = normalizeInventoryRow(row);
+
+  return {
+    item_instance_id: normalized.item_instance_id,
+    item_id: normalized.item_id,
+
+    name: normalized.name,
+    type: normalized.type,
+    equip_slot: normalized.equip_slot,
+    stackable: normalized.stackable,
+    max_stack: normalized.max_stack,
+    quantity: normalized.quantity,
+
+    price: normalized.price,
+    sell_price: normalized.sell_price,
+    description: normalized.description,
+    icon_path: normalized.icon_path,
+    set_name: normalized.set_name,
+
+    bonus_strength: normalized.bonus_strength,
+    bonus_vitality: normalized.bonus_vitality,
+    bonus_defense: normalized.bonus_defense,
+    bonus_action_points: normalized.bonus_action_points,
+    bonus_armor_penetration: normalized.bonus_armor_penetration,
+    bonus_critical_chance: normalized.bonus_critical_chance,
+    bonus_lifesteal: normalized.bonus_lifesteal,
+
+    upgrade_level: normalized.upgrade_level,
+    enchant_stage: normalized.enchant_stage,
+    custom_data: normalized.custom_data
+  };
+}
+
+async function getPlayerInventoryRows(playerName) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  if (!normalizedPlayerName) {
+    throw new Error("Missing player_name");
+  }
+
+  const { data, error } = await supabase
+    .from("player_inventory_snapshot")
+    .select("*")
+    .eq("player_name", normalizedPlayerName)
+    .order("location_type", { ascending: true })
+    .order("location_slot", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return Array.isArray(data) ? data.map(normalizeInventoryRow) : [];
+}
+
+async function buildInventoryStatePayload(playerName) {
+  const rows = await getPlayerInventoryRows(playerName);
+
+  const backpackItems = createEmptyBackpackItems();
+  const equippedItems = createEmptyEquippedItems();
+
+  for (const row of rows) {
+    const itemPayload = buildClientItemPayload(row);
+
+    if (row.location_type === "backpack") {
+      const slotIndex = Number(row.location_slot);
+      if (Number.isInteger(slotIndex) && slotIndex >= 0 && slotIndex < BACKPACK_SIZE) {
+        backpackItems[slotIndex] = itemPayload;
+      }
+      continue;
+    }
+
+    if (row.location_type === "equipment") {
+      if (EQUIPMENT_SLOT_KEYS.includes(row.location_slot)) {
+        equippedItems[row.location_slot] = itemPayload;
+      }
+    }
+  }
+
+  return {
+    type: "inventory_state",
+    player_name: String(playerName || "").trim(),
+    backpack_items: backpackItems,
+    equipped_items: equippedItems
+  };
+}
+
+async function sendInventoryState(ws, playerName) {
+  const payload = await buildInventoryStatePayload(playerName);
+  sendWs(ws, payload);
+  return payload;
+}
+
+async function grantItemToPlayer(playerName, itemId, quantity = 1) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  const normalizedItemId = String(itemId || "").trim();
+  const normalizedQuantity = Math.max(1, Number(quantity || 1));
+
+  const { data, error } = await supabase.rpc("grant_item_to_player", {
+    p_player_name: normalizedPlayerName,
+    p_item_id: normalizedItemId,
+    p_quantity: normalizedQuantity
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return data || { ok: false, reason: "UNKNOWN_GRANT_RESULT" };
+}
+
+async function equipItemInstance(playerName, itemInstanceId) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  const normalizedItemInstanceId = String(itemInstanceId || "").trim();
+
+  const { data, error } = await supabase.rpc("equip_item_instance", {
+    p_player_name: normalizedPlayerName,
+    p_item_instance_id: normalizedItemInstanceId
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return data || { ok: false, reason: "UNKNOWN_EQUIP_RESULT" };
+}
+
+async function unequipItemFromSlot(playerName, slotKey) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  const normalizedSlotKey = String(slotKey || "").trim();
+
+  const { data, error } = await supabase.rpc("unequip_item_from_slot", {
+    p_player_name: normalizedPlayerName,
+    p_slot_key: normalizedSlotKey
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return data || { ok: false, reason: "UNKNOWN_UNEQUIP_RESULT" };
 }
 
 function calculateLevelFromTotalXp(totalXp) {
