@@ -1082,11 +1082,16 @@ if (existingCombat) {
       // UNKNOWN TYPE
       sendWs(ws, { type: "error", message: "Unknown type" });
 
-    } catch (err) {
-      console.error("WS MESSAGE ERROR:", err);
-      sendWs(ws, { type: "error", message: "Invalid message format" });
-    }
-  });
+      } catch (err) {
+    console.error("WS MESSAGE HANDLER ERROR ->", err);
+
+    sendWs(ws, {
+      type: "error",
+      message: err?.message || String(err),
+      detail: "WS_HANDLER_EXCEPTION"
+    });
+  }
+});
 
     ws.on("close", () => {
     console.log("WS CLOSED");
@@ -1869,13 +1874,40 @@ async function buyMerchantItem(playerName, merchantId, itemId, quantity = 1) {
     return { ok: false, reason: "INSUFFICIENT_GOLD" };
   }
 
+  // Buscar primer slot libre del backpack
+  const { data: backpackRows, error: backpackError } = await supabase
+    .from("player_item_instances")
+    .select("location_slot")
+    .eq("player_name", normalizedPlayerName)
+    .eq("location_type", "backpack");
+
+  if (backpackError) throw backpackError;
+
+  const usedSlots = new Set(
+    (backpackRows || [])
+      .map((row) => Number(row.location_slot))
+      .filter((value) => Number.isInteger(value))
+  );
+
+  let freeSlot = -1;
+  for (let slot = 0; slot < 20; slot++) {
+    if (!usedSlots.has(slot)) {
+      freeSlot = slot;
+      break;
+    }
+  }
+
+  if (freeSlot === -1) {
+    return { ok: false, reason: "BACKPACK_FULL" };
+  }
+
   const { error: insertError } = await supabase
     .from("player_item_instances")
     .insert({
       player_name: normalizedPlayerName,
       item_id: normalizedItemId,
       location_type: "backpack",
-      location_slot: null,
+      location_slot: freeSlot,
       quantity: 1,
       upgrade_level: 0,
       enchant_stage: 0,
