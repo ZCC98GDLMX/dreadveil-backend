@@ -56,6 +56,9 @@ const playerCombatIndex = new Map();
 const playerCombatConfigs = new Map();
 // player_name -> { attack_sequence: [], target_strategy: "first_alive", updated_at: ... }
 
+const merchantActionLocks = new Map();
+// player_name -> true
+
 const COMBAT_ROUND_INTERVAL_MS = 1800;
 const COMBAT_FINISH_CLEANUP_MS = 8000;
 const COMBAT_ACTION_INTERVAL_MS = 1000;
@@ -599,6 +602,18 @@ if (type === "merchant_buy") {
 
   const result = await buyMerchantItem(playerName, merchantId, itemId, quantity);
 
+  if (!result?.ok) {
+    sendWs(ws, {
+      type: "merchant_error",
+      player_name: playerName,
+      merchant_id: merchantId,
+      item_id: itemId,
+      reason: String(result?.reason || "MERCHANT_BUY_FAILED"),
+      message: String(result?.message || "Merchant buy failed.")
+    });
+    return;
+  }
+
   sendWs(ws, {
     type: "merchant_buy_result",
     player_name: playerName,
@@ -632,6 +647,18 @@ if (type === "merchant_sell") {
   }
 
   const result = await sellMerchantItem(playerName, merchantId, itemInstanceId, quantity);
+
+  if (!result?.ok) {
+    sendWs(ws, {
+      type: "merchant_error",
+      player_name: playerName,
+      merchant_id: merchantId,
+      item_instance_id: itemInstanceId,
+      reason: String(result?.reason || "MERCHANT_SELL_FAILED"),
+      message: String(result?.message || "Merchant sell failed.")
+    });
+    return;
+  }
 
   sendWs(ws, {
     type: "merchant_sell_result",
@@ -1638,7 +1665,7 @@ async function getItemDefinitionsByIds(itemIds = []) {
   return Array.isArray(data) ? data : [];
 }
 
-function buildMerchantCatalogData(inventoryRows = [], itemDefinitions = []) {
+function buildMerchantCatalogData(inventoryRows = [], itemDefinitions = [], merchant = null) {
   const itemDefMap = new Map();
   for (const row of itemDefinitions) {
     itemDefMap.set(String(row.item_id), row);
@@ -1661,6 +1688,18 @@ function buildMerchantCatalogData(inventoryRows = [], itemDefinitions = []) {
       itemsByCategory[categoryName] = [];
     }
 
+    const canBuy = Boolean(row.is_purchasable === true);
+    const canSellToMerchant =
+      Boolean(row.is_sellable_to_merchant !== false) &&
+      merchantAcceptsItemType(merchant, itemDef.item_type);
+
+    let sellBlockReason = "";
+    if (!merchantAcceptsItemType(merchant, itemDef.item_type)) {
+      sellBlockReason = "This merchant does not buy this item type.";
+    } else if (row.is_sellable_to_merchant === false) {
+      sellBlockReason = "This merchant does not buy this item.";
+    }
+
     itemsByCategory[categoryName].push({
       item_id: String(itemDef.item_id || ""),
       name: String(itemDef.name || ""),
@@ -1668,7 +1707,16 @@ function buildMerchantCatalogData(inventoryRows = [], itemDefinitions = []) {
       equip_slot: String(itemDef.equip_slot || ""),
       description: String(itemDef.description || ""),
       icon_path: String(itemDef.icon_path || ""),
-      price: Number(row.price_buy ?? itemDef.buy_price ?? 0),
+
+      price_buy: Number(row.price_buy ?? itemDef.buy_price ?? 0),
+      price_sell: Number(row.price_sell ?? itemDef.sell_price ?? 0),
+
+      can_buy: canBuy,
+      can_sell_to_merchant: canSellToMerchant,
+      sell_block_reason: sellBlockReason,
+
+      merchant_tags: parseJsonArray(merchant?.specialization_tags),
+
       stackable: Boolean(itemDef.stackable || false),
       max_stack: Number(itemDef.max_stack || 1),
 
@@ -1697,12 +1745,22 @@ async function buildMerchantSellableItems(playerName, merchantId) {
     return [];
   }
 
+  const { data: merchant, error: merchantError } = await supabase
+    .from("merchant_definitions")
+    .select("*")
+    .eq("merchant_id", normalizedMerchantId)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (merchantError) throw merchantError;
+  if (!merchant) return [];
+
   const { data: playerItems, error: itemsError } = await supabase
     .from("player_item_instances")
     .select("*")
     .eq("player_name", normalizedPlayerName)
     .eq("location_type", "backpack")
-    .order("created_at", { ascending: true });
+    .order("location_slot", { ascending: true });
 
   if (itemsError) throw itemsError;
 
@@ -1728,9 +1786,13 @@ async function buildMerchantSellableItems(playerName, merchantId) {
     if (!itemDef) continue;
 
     const merchantRow = merchantRowMap.get(itemId);
-    const explicitSellable = merchantRow?.is_sellable_to_merchant;
+    const acceptsType = merchantAcceptsItemType(merchant, itemDef.item_type);
 
-    if (explicitSellable === false) {
+    if (!acceptsType) {
+      continue;
+    }
+
+    if (merchantRow && merchantRow.is_sellable_to_merchant === false) {
       continue;
     }
 
@@ -1752,10 +1814,14 @@ async function buildMerchantSellableItems(playerName, merchantId) {
       equip_slot: String(itemDef.equip_slot || ""),
       description: String(itemDef.description || ""),
       icon_path: String(itemDef.icon_path || ""),
-      price: unitSellPrice,
-      quantity: Number(instance.quantity || 1),
+
+      price_sell: unitSellPrice,
+      can_sell: true,
+      sell_block_reason: "",
+
       stackable: Boolean(itemDef.stackable || false),
       max_stack: Number(itemDef.max_stack || 1),
+      quantity: Number(instance.quantity || 1),
 
       bonus_strength: Number(itemDef.bonus_strength || 0),
       bonus_vitality: Number(itemDef.bonus_vitality || 0),
@@ -1783,14 +1849,15 @@ async function buildMerchantStatePayload(playerName, mapId, npcId) {
       player_name: normalizedPlayerName,
       map_id: normalizedMapId,
       npc_id: normalizedNpcId,
-      reason: "MERCHANT_NOT_FOUND"
+      reason: "MERCHANT_NOT_FOUND",
+      message: "Merchant not found."
     };
   }
 
   const inventoryRows = await getMerchantInventoryRows(merchant.merchant_id);
   const itemIds = inventoryRows.map((row) => String(row.item_id || "").trim());
   const itemDefs = await getItemDefinitionsByIds(itemIds);
-  const catalog = buildMerchantCatalogData(inventoryRows, itemDefs);
+  const catalog = buildMerchantCatalogData(inventoryRows, itemDefs, merchant);
 
   const character = await getOrCreatePlayerCharacter(normalizedPlayerName);
   const sellableItems = await buildMerchantSellableItems(normalizedPlayerName, merchant.merchant_id);
@@ -1800,10 +1867,15 @@ async function buildMerchantStatePayload(playerName, mapId, npcId) {
     player_name: normalizedPlayerName,
     merchant_id: String(merchant.merchant_id || ""),
     merchant_name: String(merchant.merchant_name || merchant.npc_id || ""),
+    merchant_type: String(merchant.merchant_type || ""),
+    specialization_tags: parseJsonArray(merchant.specialization_tags),
+    accepted_item_types: parseJsonArray(merchant.accepted_item_types),
+
     map_id: normalizedMapId,
     npc_id: normalizedNpcId,
     currency_type: String(merchant.currency_type || "gold"),
     player_currency: Number(character.gold || 0),
+
     categories: catalog.categories,
     items_by_category: catalog.items_by_category,
     sellable_items: sellableItems
@@ -1817,135 +1889,152 @@ async function buyMerchantItem(playerName, merchantId, itemId, quantity = 1) {
   const normalizedQuantity = Math.max(1, Math.floor(Number(quantity || 1)));
 
   if (!normalizedPlayerName || !normalizedMerchantId || !normalizedItemId) {
-    return { ok: false, reason: "MISSING_FIELDS" };
+    return { ok: false, reason: "MISSING_FIELDS", message: "Missing required fields." };
   }
 
-  if (normalizedQuantity !== 1) {
-    return { ok: false, reason: "ONLY_QUANTITY_ONE_SUPPORTED_FOR_V1" };
+  if (isMerchantActionLocked(normalizedPlayerName)) {
+    return { ok: false, reason: "MERCHANT_BUSY", message: "Please wait a moment before trying again." };
   }
 
-  const { data: merchant, error: merchantError } = await supabase
-    .from("merchant_definitions")
-    .select("*")
-    .eq("merchant_id", normalizedMerchantId)
-    .eq("is_active", true)
-    .maybeSingle();
+  lockMerchantAction(normalizedPlayerName);
 
-  if (merchantError) throw merchantError;
-  if (!merchant) {
-    return { ok: false, reason: "MERCHANT_NOT_FOUND" };
-  }
-
-  const { data: merchantRow, error: merchantRowError } = await supabase
-    .from("merchant_inventory")
-    .select("*")
-    .eq("merchant_id", normalizedMerchantId)
-    .eq("item_id", normalizedItemId)
-    .eq("is_visible", true)
-    .eq("is_purchasable", true)
-    .maybeSingle();
-
-  if (merchantRowError) throw merchantRowError;
-  if (!merchantRow) {
-    return { ok: false, reason: "ITEM_NOT_SOLD_BY_MERCHANT" };
-  }
-
-  const { data: itemDef, error: itemDefError } = await supabase
-    .from("item_definitions")
-    .select("*")
-    .eq("item_id", normalizedItemId)
-    .eq("is_active", true)
-    .maybeSingle();
-
-  if (itemDefError) throw itemDefError;
-  if (!itemDef) {
-    return { ok: false, reason: "ITEM_DEFINITION_NOT_FOUND" };
-  }
-
-  const unitPrice = Number(merchantRow.price_buy ?? itemDef.buy_price ?? 0);
-  if (unitPrice < 0) {
-    return { ok: false, reason: "INVALID_BUY_PRICE" };
-  }
-
-  const totalPrice = unitPrice * normalizedQuantity;
-  const character = await getOrCreatePlayerCharacter(normalizedPlayerName);
-
-  if (Number(character.gold || 0) < totalPrice) {
-    return { ok: false, reason: "INSUFFICIENT_GOLD" };
-  }
-
-  // Buscar primer slot libre del backpack
-  const { data: backpackRows, error: backpackError } = await supabase
-    .from("player_item_instances")
-    .select("location_slot")
-    .eq("player_name", normalizedPlayerName)
-    .eq("location_type", "backpack");
-
-  if (backpackError) throw backpackError;
-
-  const usedSlots = new Set(
-    (backpackRows || [])
-      .map((row) => Number(row.location_slot))
-      .filter((value) => Number.isInteger(value))
-  );
-
-  let freeSlot = -1;
-  for (let slot = 0; slot < 20; slot++) {
-    if (!usedSlots.has(slot)) {
-      freeSlot = slot;
-      break;
+  try {
+    if (normalizedQuantity !== 1) {
+      return {
+        ok: false,
+        reason: "ONLY_QUANTITY_ONE_SUPPORTED_FOR_V2",
+        message: "This merchant only supports quantity 1 for now."
+      };
     }
-  }
 
-  if (freeSlot === -1) {
-    return { ok: false, reason: "BACKPACK_FULL" };
-  }
+    const { data: merchant, error: merchantError } = await supabase
+      .from("merchant_definitions")
+      .select("*")
+      .eq("merchant_id", normalizedMerchantId)
+      .eq("is_active", true)
+      .maybeSingle();
 
-  const { error: insertError } = await supabase
-    .from("player_item_instances")
-    .insert({
-      player_name: normalizedPlayerName,
-      item_id: normalizedItemId,
-      location_type: "backpack",
-      location_slot: freeSlot,
-      quantity: 1,
-      upgrade_level: 0,
-      enchant_stage: 0,
-      custom_data: {}
+    if (merchantError) throw merchantError;
+    if (!merchant) {
+      return { ok: false, reason: "MERCHANT_NOT_FOUND", message: "Merchant not found." };
+    }
+
+    const { data: merchantRow, error: merchantRowError } = await supabase
+      .from("merchant_inventory")
+      .select("*")
+      .eq("merchant_id", normalizedMerchantId)
+      .eq("item_id", normalizedItemId)
+      .eq("is_visible", true)
+      .eq("is_purchasable", true)
+      .maybeSingle();
+
+    if (merchantRowError) throw merchantRowError;
+    if (!merchantRow) {
+      return { ok: false, reason: "ITEM_NOT_SOLD_BY_MERCHANT", message: "This item is not sold by this merchant." };
+    }
+
+    const { data: itemDef, error: itemDefError } = await supabase
+      .from("item_definitions")
+      .select("*")
+      .eq("item_id", normalizedItemId)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (itemDefError) throw itemDefError;
+    if (!itemDef) {
+      return { ok: false, reason: "ITEM_DEFINITION_NOT_FOUND", message: "Item definition not found." };
+    }
+
+    const unitPrice = Number(merchantRow.price_buy ?? itemDef.buy_price ?? 0);
+    if (unitPrice < 0) {
+      return { ok: false, reason: "INVALID_BUY_PRICE", message: "Invalid item price." };
+    }
+
+    const totalPrice = unitPrice * normalizedQuantity;
+    const character = await getOrCreatePlayerCharacter(normalizedPlayerName);
+
+    if (Number(character.gold || 0) < totalPrice) {
+      return { ok: false, reason: "INSUFFICIENT_GOLD", message: "Not enough gold." };
+    }
+
+    const { data: backpackRows, error: backpackError } = await supabase
+      .from("player_item_instances")
+      .select("location_slot")
+      .eq("player_name", normalizedPlayerName)
+      .eq("location_type", "backpack");
+
+    if (backpackError) throw backpackError;
+
+    const usedSlots = new Set(
+      (backpackRows || [])
+        .map((row) => Number(row.location_slot))
+        .filter((value) => Number.isInteger(value))
+    );
+
+    let freeSlot = -1;
+    for (let slot = 0; slot < 20; slot++) {
+      if (!usedSlots.has(slot)) {
+        freeSlot = slot;
+        break;
+      }
+    }
+
+    if (freeSlot === -1) {
+      return { ok: false, reason: "BACKPACK_FULL", message: "Backpack is full." };
+    }
+
+    const { error: insertError } = await supabase
+      .from("player_item_instances")
+      .insert({
+        player_name: normalizedPlayerName,
+        item_id: normalizedItemId,
+        location_type: "backpack",
+        location_slot: freeSlot,
+        quantity: 1,
+        upgrade_level: 0,
+        enchant_stage: 0,
+        custom_data: {}
+      });
+
+    if (insertError) throw insertError;
+
+    const updatedCharacter = await savePlayerCharacter(normalizedPlayerName, {
+      gold: Math.max(0, Number(character.gold || 0) - totalPrice)
     });
 
-  if (insertError) throw insertError;
+    const { error: logError } = await supabase
+      .from("merchant_transaction_log")
+      .insert({
+        player_name: normalizedPlayerName,
+        merchant_id: normalizedMerchantId,
+        transaction_type: "buy",
+        item_id: normalizedItemId,
+        quantity: normalizedQuantity,
+        unit_price: unitPrice,
+        total_price: totalPrice,
+        currency_type: String(merchant.currency_type || "gold")
+      });
 
-  const updatedCharacter = await savePlayerCharacter(normalizedPlayerName, {
-    gold: Math.max(0, Number(character.gold || 0) - totalPrice)
-  });
+    if (logError) {
+      console.error("MERCHANT BUY LOG ERROR ->", logError);
+    }
 
-  const { error: logError } = await supabase
-    .from("merchant_transaction_log")
-    .insert({
-      player_name: normalizedPlayerName,
+    return {
+      ok: true,
+      reason: "BUY_OK",
+      message: `Purchased ${String(itemDef.name || "item")} for ${totalPrice} gold.`,
+      character: updatedCharacter,
       merchant_id: normalizedMerchantId,
-      transaction_type: "buy",
       item_id: normalizedItemId,
+      item_name: String(itemDef.name || ""),
       quantity: normalizedQuantity,
-      unit_price: unitPrice,
-      total_price: totalPrice,
-      currency_type: String(merchant.currency_type || "gold")
-    });
-
-  if (logError) {
-    console.error("MERCHANT BUY LOG ERROR ->", logError);
+      gold_delta: -totalPrice,
+      gold_after: Number(updatedCharacter.gold || 0),
+      total_price: totalPrice
+    };
+  } finally {
+    unlockMerchantAction(normalizedPlayerName);
   }
-
-  return {
-    ok: true,
-    reason: "BUY_OK",
-    character: updatedCharacter,
-    merchant_id: normalizedMerchantId,
-    item_id: normalizedItemId,
-    quantity: normalizedQuantity,
-    total_price: totalPrice
-  };
 }
 
 async function sellMerchantItem(playerName, merchantId, itemInstanceId, quantity = 1) {
@@ -1955,130 +2044,194 @@ async function sellMerchantItem(playerName, merchantId, itemInstanceId, quantity
   const normalizedQuantity = Math.max(1, Math.floor(Number(quantity || 1)));
 
   if (!normalizedPlayerName || !normalizedMerchantId || !normalizedItemInstanceId) {
-    return { ok: false, reason: "MISSING_FIELDS" };
+    return { ok: false, reason: "MISSING_FIELDS", message: "Missing required fields." };
   }
 
-  if (normalizedQuantity !== 1) {
-    return { ok: false, reason: "ONLY_QUANTITY_ONE_SUPPORTED_FOR_V1" };
+  if (isMerchantActionLocked(normalizedPlayerName)) {
+    return { ok: false, reason: "MERCHANT_BUSY", message: "Please wait a moment before trying again." };
   }
 
-  const { data: merchant, error: merchantError } = await supabase
-    .from("merchant_definitions")
-    .select("*")
-    .eq("merchant_id", normalizedMerchantId)
-    .eq("is_active", true)
-    .maybeSingle();
+  lockMerchantAction(normalizedPlayerName);
 
-  if (merchantError) throw merchantError;
-  if (!merchant) {
-    return { ok: false, reason: "MERCHANT_NOT_FOUND" };
-  }
+  try {
+    if (normalizedQuantity !== 1) {
+      return {
+        ok: false,
+        reason: "ONLY_QUANTITY_ONE_SUPPORTED_FOR_V2",
+        message: "This merchant only supports quantity 1 for now."
+      };
+    }
 
-  const { data: instance, error: instanceError } = await supabase
-    .from("player_item_instances")
-    .select("*")
-    .eq("item_instance_id", normalizedItemInstanceId)
-    .eq("player_name", normalizedPlayerName)
-    .maybeSingle();
+    const { data: merchant, error: merchantError } = await supabase
+      .from("merchant_definitions")
+      .select("*")
+      .eq("merchant_id", normalizedMerchantId)
+      .eq("is_active", true)
+      .maybeSingle();
 
-  if (instanceError) throw instanceError;
-  if (!instance) {
-    return { ok: false, reason: "ITEM_INSTANCE_NOT_FOUND" };
-  }
+    if (merchantError) throw merchantError;
+    if (!merchant) {
+      return { ok: false, reason: "MERCHANT_NOT_FOUND", message: "Merchant not found." };
+    }
 
-  if (String(instance.location_type || "") !== "backpack") {
-    return { ok: false, reason: "ONLY_BACKPACK_ITEMS_CAN_BE_SOLD" };
-  }
-
-  const itemId = String(instance.item_id || "").trim();
-
-  const { data: itemDef, error: itemDefError } = await supabase
-    .from("item_definitions")
-    .select("*")
-    .eq("item_id", itemId)
-    .eq("is_active", true)
-    .maybeSingle();
-
-  if (itemDefError) throw itemDefError;
-  if (!itemDef) {
-    return { ok: false, reason: "ITEM_DEFINITION_NOT_FOUND" };
-  }
-
-  const { data: merchantRow, error: merchantRowError } = await supabase
-    .from("merchant_inventory")
-    .select("*")
-    .eq("merchant_id", normalizedMerchantId)
-    .eq("item_id", itemId)
-    .maybeSingle();
-
-  if (merchantRowError) throw merchantRowError;
-
-  if (merchantRow && merchantRow.is_sellable_to_merchant === false) {
-    return { ok: false, reason: "ITEM_NOT_ACCEPTED_BY_MERCHANT" };
-  }
-
-  const unitPrice = Number(
-    merchantRow?.price_sell ??
-    itemDef.sell_price ??
-    0
-  );
-
-  if (unitPrice <= 0) {
-    return { ok: false, reason: "ITEM_HAS_NO_SELL_VALUE" };
-  }
-
-  if (Number(instance.quantity || 1) > 1) {
-    const { error: updateError } = await supabase
+    const { data: instance, error: instanceError } = await supabase
       .from("player_item_instances")
-      .update({
-        quantity: Number(instance.quantity || 1) - 1,
-        updated_at: new Date().toISOString()
-      })
-      .eq("item_instance_id", normalizedItemInstanceId);
+      .select("*")
+      .eq("item_instance_id", normalizedItemInstanceId)
+      .eq("player_name", normalizedPlayerName)
+      .maybeSingle();
 
-    if (updateError) throw updateError;
-  } else {
-    const { error: deleteError } = await supabase
-      .from("player_item_instances")
-      .delete()
-      .eq("item_instance_id", normalizedItemInstanceId);
+    if (instanceError) throw instanceError;
+    if (!instance) {
+      return { ok: false, reason: "ITEM_INSTANCE_NOT_FOUND", message: "Item instance not found." };
+    }
 
-    if (deleteError) throw deleteError;
-  }
+    if (String(instance.location_type || "") !== "backpack") {
+      return { ok: false, reason: "ONLY_BACKPACK_ITEMS_CAN_BE_SOLD", message: "Only backpack items can be sold." };
+    }
 
-  const character = await getOrCreatePlayerCharacter(normalizedPlayerName);
-  const updatedCharacter = await savePlayerCharacter(normalizedPlayerName, {
-    gold: Math.max(0, Number(character.gold || 0) + unitPrice)
-  });
+    const itemId = String(instance.item_id || "").trim();
 
-  const { error: logError } = await supabase
-    .from("merchant_transaction_log")
-    .insert({
-      player_name: normalizedPlayerName,
-      merchant_id: normalizedMerchantId,
-      transaction_type: "sell",
-      item_id: itemId,
-      quantity: normalizedQuantity,
-      unit_price: unitPrice,
-      total_price: unitPrice,
-      currency_type: String(merchant.currency_type || "gold")
+    const { data: itemDef, error: itemDefError } = await supabase
+      .from("item_definitions")
+      .select("*")
+      .eq("item_id", itemId)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (itemDefError) throw itemDefError;
+    if (!itemDef) {
+      return { ok: false, reason: "ITEM_DEFINITION_NOT_FOUND", message: "Item definition not found." };
+    }
+
+    if (!merchantAcceptsItemType(merchant, itemDef.item_type)) {
+      return {
+        ok: false,
+        reason: "MERCHANT_REJECTS_ITEM_TYPE",
+        message: "This merchant does not buy this item type."
+      };
+    }
+
+    const { data: merchantRow, error: merchantRowError } = await supabase
+      .from("merchant_inventory")
+      .select("*")
+      .eq("merchant_id", normalizedMerchantId)
+      .eq("item_id", itemId)
+      .maybeSingle();
+
+    if (merchantRowError) throw merchantRowError;
+
+    if (merchantRow && merchantRow.is_sellable_to_merchant === false) {
+      return {
+        ok: false,
+        reason: "ITEM_NOT_ACCEPTED_BY_MERCHANT",
+        message: "This merchant does not buy this item."
+      };
+    }
+
+    const unitPrice = Number(
+      merchantRow?.price_sell ??
+      itemDef.sell_price ??
+      0
+    );
+
+    if (unitPrice <= 0) {
+      return { ok: false, reason: "ITEM_HAS_NO_SELL_VALUE", message: "This item cannot be sold." };
+    }
+
+    if (Number(instance.quantity || 1) > 1) {
+      const { error: updateError } = await supabase
+        .from("player_item_instances")
+        .update({
+          quantity: Number(instance.quantity || 1) - 1,
+          updated_at: new Date().toISOString()
+        })
+        .eq("item_instance_id", normalizedItemInstanceId);
+
+      if (updateError) throw updateError;
+    } else {
+      const { error: deleteError } = await supabase
+        .from("player_item_instances")
+        .delete()
+        .eq("item_instance_id", normalizedItemInstanceId);
+
+      if (deleteError) throw deleteError;
+    }
+
+    const character = await getOrCreatePlayerCharacter(normalizedPlayerName);
+    const updatedCharacter = await savePlayerCharacter(normalizedPlayerName, {
+      gold: Math.max(0, Number(character.gold || 0) + unitPrice)
     });
 
-  if (logError) {
-    console.error("MERCHANT SELL LOG ERROR ->", logError);
-  }
+    const { error: logError } = await supabase
+      .from("merchant_transaction_log")
+      .insert({
+        player_name: normalizedPlayerName,
+        merchant_id: normalizedMerchantId,
+        transaction_type: "sell",
+        item_id: itemId,
+        quantity: normalizedQuantity,
+        unit_price: unitPrice,
+        total_price: unitPrice,
+        currency_type: String(merchant.currency_type || "gold")
+      });
 
-  return {
-    ok: true,
-    reason: "SELL_OK",
-    character: updatedCharacter,
-    merchant_id: normalizedMerchantId,
-    item_id: itemId,
-    quantity: normalizedQuantity,
-    total_price: unitPrice
-  };
+    if (logError) {
+      console.error("MERCHANT SELL LOG ERROR ->", logError);
+    }
+
+    return {
+      ok: true,
+      reason: "SELL_OK",
+      message: `Sold ${String(itemDef.name || "item")} for ${unitPrice} gold.`,
+      character: updatedCharacter,
+      merchant_id: normalizedMerchantId,
+      item_instance_id: normalizedItemInstanceId,
+      item_id: itemId,
+      item_name: String(itemDef.name || ""),
+      quantity: normalizedQuantity,
+      gold_delta: unitPrice,
+      gold_after: Number(updatedCharacter.gold || 0),
+      total_price: unitPrice
+    };
+  } finally {
+    unlockMerchantAction(normalizedPlayerName);
+  }
 }
 
+function isMerchantActionLocked(playerName) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  if (!normalizedPlayerName) return false;
+  return merchantActionLocks.get(normalizedPlayerName) === true;
+}
+
+function lockMerchantAction(playerName) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  if (!normalizedPlayerName) return;
+  merchantActionLocks.set(normalizedPlayerName, true);
+}
+
+function unlockMerchantAction(playerName) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  if (!normalizedPlayerName) return;
+  merchantActionLocks.delete(normalizedPlayerName);
+}
+
+function parseJsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  return [];
+}
+
+function merchantAcceptsItemType(merchant, itemType) {
+  const acceptedItemTypes = parseJsonArray(merchant?.accepted_item_types);
+  if (acceptedItemTypes.length === 0) {
+    return true;
+  }
+
+  const normalizedItemType = String(itemType || "").trim();
+  return acceptedItemTypes.includes(normalizedItemType);
+}
 
 function normalizeQuestStatus(value) {
   const normalized = String(value || "").trim();
