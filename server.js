@@ -4791,6 +4791,62 @@ async function finishCombatAndScheduleCleanup(combat) {
   }, COMBAT_FINISH_CLEANUP_MS);
 }
 
+
+async function finishCombatAndScheduleCleanup(combat) {
+  if (!combat) return;
+
+  try {
+    let rewards = null;
+    let grantedDropsSummary = null;
+
+    if (combat.status === "players_win") {
+      rewards = buildEncounterRewards(combat.encounter_id, combat.tile_id);
+
+      const killEntries = buildQuestKillProgressEntriesFromCombat(combat);
+
+      for (const unit of Array.isArray(combat.player_units) ? combat.player_units : []) {
+        const playerName = String(unit?.player_name || "").trim();
+        if (!playerName) continue;
+
+        for (const entry of killEntries) {
+          await progressQuestEvent(
+            playerName,
+            "kill_enemy",
+            entry.target_id,
+            entry.amount
+          );
+        }
+      }
+
+      if (rewards && Array.isArray(rewards.drops) && rewards.drops.length > 0) {
+        grantedDropsSummary = await grantCombatDropsToParty(combat, rewards);
+      }
+    }
+
+    broadcastToParty(combat.party_id, {
+      type: "combat_finished",
+      combat_id: combat.combat_id,
+      result: combat.status,
+      rewards: rewards,
+      granted_drops_summary: grantedDropsSummary
+    });
+  } catch (err) {
+    console.error("FINISH COMBAT ERROR:", err);
+
+    broadcastToParty(combat.party_id, {
+      type: "combat_finished",
+      combat_id: combat.combat_id,
+      result: combat.status,
+      rewards: null,
+      granted_drops_summary: null
+    });
+  }
+
+  setTimeout(() => {
+    destroyCombatInstance(combat.combat_id);
+  }, COMBAT_FINISH_CLEANUP_MS);
+}
+
 function processSingleCombatAction(combat, actionEntry) {
   if (!combat || combat.status !== "active") return null;
   if (!actionEntry) return null;
