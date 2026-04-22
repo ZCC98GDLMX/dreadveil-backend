@@ -4746,18 +4746,18 @@ async function finishCombatAndScheduleCleanup(combat) {
     if (combat.status === "players_win") {
       rewards = buildEncounterRewards(combat.encounter_id, combat.tile_id);
 
-      const killEntries = buildQuestKillProgressEntriesFromCombat(combat);
+      const questTargetId = String(combat.encounter_id || "").trim();
 
-      for (const unit of Array.isArray(combat.player_units) ? combat.player_units : []) {
-        const playerName = String(unit?.player_name || "").trim();
-        if (!playerName) continue;
+      if (questTargetId) {
+        for (const unit of Array.isArray(combat.player_units) ? combat.player_units : []) {
+          const playerName = String(unit?.player_name || "").trim();
+          if (!playerName) continue;
 
-        for (const entry of killEntries) {
           await progressQuestEvent(
             playerName,
             "kill_enemy",
-            entry.target_id,
-            entry.amount
+            questTargetId,
+            1
           );
         }
       }
