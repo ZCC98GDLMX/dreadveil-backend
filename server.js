@@ -677,6 +677,38 @@ if (type === "merchant_sell") {
   return;
 }
 
+if (type === "loot_resolve_request") {
+  const playerName = String(data.player_name || client?.player_name || "").trim();
+  const mapId = String(data.map_id || "").trim();
+  const enemyId = String(data.enemy_id || "").trim();
+
+  if (!playerName || !mapId || !enemyId) {
+    sendWs(ws, {
+      type: "error",
+      message: "Missing loot_resolve_request fields"
+    });
+    return;
+  }
+
+  const result = await resolveLootDrop(playerName, mapId, enemyId);
+
+  sendWs(ws, {
+    type: "loot_result",
+    player_name: playerName,
+    map_id: mapId,
+    enemy_id: enemyId,
+    ...result
+  });
+
+  if (result?.ok) {
+    await sendInventoryState(ws, playerName);
+  }
+
+  return;
+}
+
+
+
 
 
             if (type === "character_gain_rewards") {
@@ -1517,6 +1549,181 @@ async function grantItemToPlayer(playerName, itemId, quantity = 1) {
   }
 
   return data || { ok: false, reason: "UNKNOWN_GRANT_RESULT" };
+}
+
+async function getLootTableBySource(mapId, enemyId) {
+  const normalizedMapId = String(mapId || "").trim();
+  const normalizedEnemyId = String(enemyId || "").trim();
+
+  if (!normalizedMapId || !normalizedEnemyId) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("loot_tables")
+    .select("*")
+    .eq("map_id", normalizedMapId)
+    .eq("enemy_id", normalizedEnemyId)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+async function getLootEntriesByTableId(lootTableId) {
+  const normalizedLootTableId = String(lootTableId || "").trim();
+  if (!normalizedLootTableId) return [];
+
+  const { data, error } = await supabase
+    .from("loot_table_entries")
+    .select("*")
+    .eq("loot_table_id", normalizedLootTableId)
+    .eq("is_active", true)
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+}
+
+function getRandomIntInclusive(minValue, maxValue) {
+  const min = Math.floor(Number(minValue || 1));
+  const max = Math.floor(Number(maxValue || min));
+  if (max <= min) return min;
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function rollLootEntries(entries = []) {
+  const rolledDrops = [];
+
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const dropChance = Number(entry.drop_chance || 0);
+    if (dropChance <= 0) continue;
+
+    const roll = Math.random();
+    if (roll > dropChance) continue;
+
+    const quantity = getRandomIntInclusive(
+      Number(entry.min_quantity || 1),
+      Number(entry.max_quantity || 1)
+    );
+
+    rolledDrops.push({
+      item_id: String(entry.item_id || "").trim(),
+      quantity
+    });
+  }
+
+  return rolledDrops;
+}
+
+async function resolveLootDrop(playerName, mapId, enemyId) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  const normalizedMapId = String(mapId || "").trim();
+  const normalizedEnemyId = String(enemyId || "").trim();
+
+  if (!normalizedPlayerName || !normalizedMapId || !normalizedEnemyId) {
+    return {
+      ok: false,
+      reason: "MISSING_FIELDS",
+      message: "Missing loot fields.",
+      drops: []
+    };
+  }
+
+  const lootTable = await getLootTableBySource(normalizedMapId, normalizedEnemyId);
+  if (!lootTable) {
+    return {
+      ok: true,
+      reason: "NO_LOOT_TABLE",
+      message: "",
+      drops: []
+    };
+  }
+
+  const lootEntries = await getLootEntriesByTableId(lootTable.loot_table_id);
+  if (lootEntries.length === 0) {
+    return {
+      ok: true,
+      reason: "NO_LOOT_ENTRIES",
+      message: "",
+      drops: []
+    };
+  }
+
+  const rolledDrops = rollLootEntries(lootEntries);
+  if (rolledDrops.length === 0) {
+    return {
+      ok: true,
+      reason: "NO_DROP",
+      message: "",
+      drops: []
+    };
+  }
+
+  const itemIds = rolledDrops
+    .map((drop) => String(drop.item_id || "").trim())
+    .filter((id) => id.length > 0);
+
+  const itemDefs = await getItemDefinitionsByIds(itemIds);
+  const itemDefMap = new Map();
+  for (const itemDef of itemDefs) {
+    itemDefMap.set(String(itemDef.item_id || "").trim(), itemDef);
+  }
+
+  const grantedDrops = [];
+
+  for (const drop of rolledDrops) {
+    const itemId = String(drop.item_id || "").trim();
+    const quantity = Math.max(1, Number(drop.quantity || 1));
+
+    if (!itemId) continue;
+
+    const grantResult = await grantItemToPlayer(normalizedPlayerName, itemId, quantity);
+    if (!grantResult?.ok) {
+      console.error("LOOT GRANT FAILED ->", {
+        playerName: normalizedPlayerName,
+        mapId: normalizedMapId,
+        enemyId: normalizedEnemyId,
+        itemId,
+        quantity,
+        grantResult
+      });
+      continue;
+    }
+
+    const itemDef = itemDefMap.get(itemId);
+
+    grantedDrops.push({
+      item_id: itemId,
+      item_name: String(itemDef?.name || itemId),
+      quantity,
+      icon_path: String(itemDef?.icon_path || "")
+    });
+
+    const { error: logError } = await supabase
+      .from("player_loot_log")
+      .insert({
+        player_name: normalizedPlayerName,
+        map_id: normalizedMapId,
+        enemy_id: normalizedEnemyId,
+        item_id: itemId,
+        quantity
+      });
+
+    if (logError) {
+      console.error("PLAYER LOOT LOG ERROR ->", logError);
+    }
+  }
+
+  return {
+    ok: true,
+    reason: grantedDrops.length > 0 ? "DROP_GRANTED" : "DROP_NOT_GRANTED",
+    message: grantedDrops.length > 0
+      ? `You obtained: ${grantedDrops.map((d) => d.item_name).join(", ")}`
+      : "",
+    drops: grantedDrops
+  };
 }
 
 async function equipItemInstance(playerName, itemInstanceId) {
