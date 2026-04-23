@@ -1593,10 +1593,47 @@ function getRandomIntInclusive(minValue, maxValue) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function rollLootEntries(entries = []) {
+function rollLootEntries(entries = [], dropMode = "independent") {
+  const safeEntries = Array.isArray(entries) ? entries : [];
+
+  if (safeEntries.length === 0) {
+    return [];
+  }
+
+  if (dropMode === "single_random_entry") {
+    const eligibleEntries = [];
+
+    for (const entry of safeEntries) {
+      const dropChance = Number(entry.drop_chance || 0);
+      if (dropChance <= 0) continue;
+
+      const roll = Math.random();
+      if (roll > dropChance) continue;
+
+      eligibleEntries.push(entry);
+    }
+
+    if (eligibleEntries.length === 0) {
+      return [];
+    }
+
+    const chosenEntry =
+      eligibleEntries[Math.floor(Math.random() * eligibleEntries.length)];
+
+    const quantity = getRandomIntInclusive(
+      Number(chosenEntry.min_quantity || 1),
+      Number(chosenEntry.max_quantity || 1)
+    );
+
+    return [{
+      item_id: String(chosenEntry.item_id || "").trim(),
+      quantity
+    }];
+  }
+
   const rolledDrops = [];
 
-  for (const entry of Array.isArray(entries) ? entries : []) {
+  for (const entry of safeEntries) {
     const dropChance = Number(entry.drop_chance || 0);
     if (dropChance <= 0) continue;
 
@@ -1651,7 +1688,8 @@ async function resolveLootDrop(playerName, mapId, enemyId) {
     };
   }
 
-  const rolledDrops = rollLootEntries(lootEntries);
+  const dropMode = String(lootTable.drop_mode || "independent").trim();
+  const rolledDrops = rollLootEntries(lootEntries, dropMode);
   if (rolledDrops.length === 0) {
     return {
       ok: true,
