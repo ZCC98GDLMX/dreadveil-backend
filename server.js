@@ -7,6 +7,7 @@ const cors = require("cors");
 const http = require("http");
 const WebSocket = require("ws");
 const { createClient } = require("@supabase/supabase-js");
+const bcrypt = require("bcryptjs");
 
 const app = express();
 
@@ -30,6 +31,154 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SECRET_KEY
 );
+
+// =============================
+// AUTH ENDPOINTS (REGISTER / LOGIN)
+// =============================
+
+app.post("/auth/register", async (req, res) => {
+  try {
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const username = String(req.body.username || "").trim();
+    const password = String(req.body.password || "");
+
+    if (!email || !username || !password) {
+      return res.status(400).json({
+        ok: false,
+        reason: "MISSING_FIELDS",
+        message: "Please fill in all fields."
+      });
+    }
+
+    if (password.length < 4) {
+      return res.status(400).json({
+        ok: false,
+        reason: "WEAK_PASSWORD",
+        message: "Password is too short."
+      });
+    }
+
+    const { data: existingAccount, error: existingError } = await supabase
+      .from("player_accounts")
+      .select("email, username")
+      .or(`email.eq.${email},username.eq.${username}`)
+      .maybeSingle();
+
+    if (existingError) throw existingError;
+
+    if (existingAccount) {
+      if (String(existingAccount.email || "").toLowerCase() === email) {
+        return res.status(409).json({
+          ok: false,
+          reason: "EMAIL_EXISTS",
+          message: "That email is already registered."
+        });
+      }
+
+      return res.status(409).json({
+        ok: false,
+        reason: "USERNAME_EXISTS",
+        message: "That username is already in use."
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const { data: insertedAccount, error: insertError } = await supabase
+      .from("player_accounts")
+      .insert({
+        email,
+        username,
+        password_hash: passwordHash
+      })
+      .select("account_id, email, username, created_at")
+      .single();
+
+    if (insertError) throw insertError;
+
+    await getOrCreatePlayerCharacter(username);
+
+    return res.json({
+      ok: true,
+      message: "Account created successfully.",
+      account: insertedAccount
+    });
+  } catch (err) {
+    console.error("AUTH REGISTER ERROR ->", err);
+    return res.status(500).json({
+      ok: false,
+      reason: "SERVER_ERROR",
+      message: "Register failed."
+    });
+  }
+});
+
+app.post("/auth/login", async (req, res) => {
+  try {
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const username = String(req.body.username || "").trim();
+    const password = String(req.body.password || "");
+
+    if (!email || !username || !password) {
+      return res.status(400).json({
+        ok: false,
+        reason: "MISSING_FIELDS",
+        message: "Please fill in all fields."
+      });
+    }
+
+    const { data: account, error } = await supabase
+      .from("player_accounts")
+      .select("*")
+      .eq("email", email)
+      .eq("username", username)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (!account) {
+      return res.status(401).json({
+        ok: false,
+        reason: "INVALID_CREDENTIALS",
+        message: "Invalid login credentials."
+      });
+    }
+
+    const passwordOk = await bcrypt.compare(password, account.password_hash);
+
+    if (!passwordOk) {
+      return res.status(401).json({
+        ok: false,
+        reason: "INVALID_CREDENTIALS",
+        message: "Invalid login credentials."
+      });
+    }
+
+    await supabase
+      .from("player_accounts")
+      .update({ last_login_at: new Date().toISOString() })
+      .eq("account_id", account.account_id);
+
+    await getOrCreatePlayerCharacter(username);
+
+    return res.json({
+      ok: true,
+      message: "Login successful.",
+      account: {
+        account_id: account.account_id,
+        email: account.email,
+        username: account.username
+      }
+    });
+  } catch (err) {
+    console.error("AUTH LOGIN ERROR ->", err);
+    return res.status(500).json({
+      ok: false,
+      reason: "SERVER_ERROR",
+      message: "Login failed."
+    });
+  }
+});
 
 //////////////////////////////////////////////////////////////////
 // 🔥 WEBSOCKET SYSTEM (PEGAR AQUÍ)
