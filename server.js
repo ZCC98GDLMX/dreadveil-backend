@@ -2174,24 +2174,65 @@ async function getInventorySnapshotRowByInstanceId(playerName, itemInstanceId) {
   return data ? normalizeInventoryRow(data) : null;
 }
 
+function isEnchantActionLocked(playerName) {
+  return enchantActionLocks.get(String(playerName || "").trim()) === true;
+}
+
+function lockEnchantAction(playerName) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  if (!normalizedPlayerName) return;
+  enchantActionLocks.set(normalizedPlayerName, true);
+}
+
+function unlockEnchantAction(playerName) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  if (!normalizedPlayerName) return;
+  enchantActionLocks.delete(normalizedPlayerName);
+}
+
+function getEnchantCost(itemDef = {}, instance = {}) {
+  const enchantStage = Math.max(0, Number(instance.enchant_stage || 0));
+  const setName = String(itemDef.set_name || "").trim();
+
+  if (setName === "Abyssal Set") {
+    if (enchantStage === 0) return 250;
+    if (enchantStage === 1) return 500;
+    if (enchantStage === 2) return 900;
+    if (enchantStage === 3) return 1500;
+  }
+
+  if (setName === "Guardian Set") {
+    if (enchantStage === 0) return 200;
+    if (enchantStage === 1) return 400;
+    if (enchantStage === 2) return 750;
+    if (enchantStage === 3) return 1200;
+  }
+
+  if (setName === "Silver Set") {
+    if (enchantStage === 0) return 180;
+    if (enchantStage === 1) return 350;
+    if (enchantStage === 2) return 650;
+    if (enchantStage === 3) return 1000;
+  }
+
+  if (enchantStage === 0) return 100;
+  if (enchantStage === 1) return 200;
+  if (enchantStage === 2) return 400;
+  if (enchantStage === 3) return 700;
+
+  return 0;
+}
+
 async function forgeItemInstance(playerName, itemInstanceId) {
   const normalizedPlayerName = String(playerName || "").trim();
   const normalizedItemInstanceId = String(itemInstanceId || "").trim();
 
   if (!normalizedPlayerName || !normalizedItemInstanceId) {
-    return {
-      ok: false,
-      reason: "MISSING_FIELDS",
-      message: "Missing required forge fields."
-    };
+    return { ok: false, reason: "MISSING_FIELDS", message: "Missing required forge fields." };
   }
 
   if (isForgeActionLocked(normalizedPlayerName)) {
-    return {
-      ok: false,
-      reason: "FORGE_BUSY",
-      message: "Please wait a moment before trying again."
-    };
+    return { ok: false, reason: "FORGE_BUSY", message: "Please wait a moment before trying again." };
   }
 
   lockForgeAction(normalizedPlayerName);
@@ -2205,13 +2246,7 @@ async function forgeItemInstance(playerName, itemInstanceId) {
       .maybeSingle();
 
     if (instanceError) throw instanceError;
-    if (!instance) {
-      return {
-        ok: false,
-        reason: "ITEM_INSTANCE_NOT_FOUND",
-        message: "Item instance not found."
-      };
-    }
+    if (!instance) return { ok: false, reason: "ITEM_INSTANCE_NOT_FOUND", message: "Item instance not found." };
 
     const { data: itemDef, error: itemDefError } = await supabase
       .from("item_definitions")
@@ -2221,67 +2256,32 @@ async function forgeItemInstance(playerName, itemInstanceId) {
       .maybeSingle();
 
     if (itemDefError) throw itemDefError;
-    if (!itemDef) {
-      return {
-        ok: false,
-        reason: "ITEM_DEFINITION_NOT_FOUND",
-        message: "Item definition not found."
-      };
-    }
+    if (!itemDef) return { ok: false, reason: "ITEM_DEFINITION_NOT_FOUND", message: "Item definition not found." };
 
     const equipSlot = String(itemDef.equip_slot || "").trim();
     const allowedSlots = new Set([
-      "main_weapon",
-      "secondary_weapon",
-      "helmet",
-      "shoulder",
-      "chest",
-      "bracers",
-      "gloves",
-      "belt",
-      "pants",
-      "boots",
-      "ring",
-      "amulet",
-      "cape",
-      "backpack"
+      "main_weapon", "secondary_weapon", "helmet", "shoulder", "chest",
+      "bracers", "gloves", "belt", "pants", "boots", "ring", "amulet",
+      "cape", "backpack"
     ]);
 
     if (!allowedSlots.has(equipSlot)) {
-      return {
-        ok: false,
-        reason: "ITEM_NOT_UPGRADEABLE",
-        message: "This item cannot be forged."
-      };
+      return { ok: false, reason: "ITEM_NOT_UPGRADEABLE", message: "This item cannot be forged." };
     }
 
     const forgeCheck = canForgeContinue(itemDef, instance);
-    if (!forgeCheck.ok) {
-      return {
-        ok: false,
-        reason: forgeCheck.reason,
-        message: forgeCheck.message
-      };
-    }
+    if (!forgeCheck.ok) return forgeCheck;
 
     const upgradeCost = getBlacksmithUpgradeCostFromItem(itemDef, instance);
     if (upgradeCost <= 0) {
-      return {
-        ok: false,
-        reason: "INVALID_FORGE_COST",
-        message: "This item has no valid forge cost."
-      };
+      return { ok: false, reason: "INVALID_FORGE_COST", message: "This item has no valid forge cost." };
     }
 
     const character = await getOrCreatePlayerCharacter(normalizedPlayerName);
     const currentGold = Math.max(0, Number(character.gold || 0));
 
     if (currentGold < upgradeCost) {
-      return {
-        ok: false,
-        reason: "INSUFFICIENT_GOLD",
-        message: "Not enough gold for upgrade."
-      };
+      return { ok: false, reason: "INSUFFICIENT_GOLD", message: "Not enough gold for upgrade." };
     }
 
     const newUpgradeLevel = Math.max(0, Number(instance.upgrade_level || 0)) + 1;
@@ -2308,21 +2308,15 @@ async function forgeItemInstance(playerName, itemInstanceId) {
 
     const updatedItem = updatedRow ? buildClientItemPayload(updatedRow) : null;
 
-    const { error: logError } = await supabase
-      .from("forge_transaction_log")
-      .insert({
-        player_name: normalizedPlayerName,
-        item_instance_id: normalizedItemInstanceId,
-        item_id: String(instance.item_id || "").trim(),
-        old_upgrade_level: Math.max(0, Number(instance.upgrade_level || 0)),
-        new_upgrade_level: newUpgradeLevel,
-        enchant_stage: Math.max(0, Number(instance.enchant_stage || 0)),
-        gold_cost: upgradeCost
-      });
-
-    if (logError) {
-      console.error("FORGE LOG ERROR ->", logError);
-    }
+    await supabase.from("forge_transaction_log").insert({
+      player_name: normalizedPlayerName,
+      item_instance_id: normalizedItemInstanceId,
+      item_id: String(instance.item_id || "").trim(),
+      old_upgrade_level: Math.max(0, Number(instance.upgrade_level || 0)),
+      new_upgrade_level: newUpgradeLevel,
+      enchant_stage: Math.max(0, Number(instance.enchant_stage || 0)),
+      gold_cost: upgradeCost
+    });
 
     return {
       ok: true,
@@ -2335,6 +2329,118 @@ async function forgeItemInstance(playerName, itemInstanceId) {
     };
   } finally {
     unlockForgeAction(normalizedPlayerName);
+  }
+}
+
+async function enchantItemInstance(playerName, itemInstanceId) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  const normalizedItemInstanceId = String(itemInstanceId || "").trim();
+
+  if (!normalizedPlayerName || !normalizedItemInstanceId) {
+    return { ok: false, reason: "MISSING_FIELDS", message: "Missing required enchant fields." };
+  }
+
+  if (isEnchantActionLocked(normalizedPlayerName)) {
+    return { ok: false, reason: "ENCHANT_BUSY", message: "Please wait a moment before trying again." };
+  }
+
+  lockEnchantAction(normalizedPlayerName);
+
+  try {
+    const { data: instance, error: instanceError } = await supabase
+      .from("player_item_instances")
+      .select("*")
+      .eq("item_instance_id", normalizedItemInstanceId)
+      .eq("player_name", normalizedPlayerName)
+      .maybeSingle();
+
+    if (instanceError) throw instanceError;
+    if (!instance) return { ok: false, reason: "ITEM_INSTANCE_NOT_FOUND", message: "Item instance not found." };
+
+    const { data: itemDef, error: itemDefError } = await supabase
+      .from("item_definitions")
+      .select("*")
+      .eq("item_id", instance.item_id)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (itemDefError) throw itemDefError;
+    if (!itemDef) return { ok: false, reason: "ITEM_DEFINITION_NOT_FOUND", message: "Item definition not found." };
+
+    const equipSlot = String(itemDef.equip_slot || "").trim();
+    if (!equipSlot) {
+      return { ok: false, reason: "ITEM_NOT_ENCHANTABLE", message: "This item cannot be enchanted." };
+    }
+
+    const upgradeLevel = Math.max(0, Number(instance.upgrade_level || 0));
+    const enchantStage = Math.max(0, Number(instance.enchant_stage || 0));
+    const maxEnchantStage = getForgeMaxEnchantStage(itemDef);
+
+    if (upgradeLevel < 10) {
+      return { ok: false, reason: "REQUIRES_FORGE_LEVEL_10", message: "This item must be forged to +10 before enchanting." };
+    }
+
+    if (enchantStage >= maxEnchantStage) {
+      return { ok: false, reason: "MAX_ENCHANT_REACHED", message: "This item has reached its max enchant stage." };
+    }
+
+    const enchantCost = getEnchantCost(itemDef, instance);
+    if (enchantCost <= 0) {
+      return { ok: false, reason: "INVALID_ENCHANT_COST", message: "This item has no valid enchant cost." };
+    }
+
+    const character = await getOrCreatePlayerCharacter(normalizedPlayerName);
+    const currentGold = Math.max(0, Number(character.gold || 0));
+
+    if (currentGold < enchantCost) {
+      return { ok: false, reason: "INSUFFICIENT_GOLD", message: "Not enough gold for enchant." };
+    }
+
+    const newEnchantStage = enchantStage + 1;
+
+    const { error: updateError } = await supabase
+      .from("player_item_instances")
+      .update({
+        enchant_stage: newEnchantStage,
+        updated_at: new Date().toISOString()
+      })
+      .eq("item_instance_id", normalizedItemInstanceId)
+      .eq("player_name", normalizedPlayerName);
+
+    if (updateError) throw updateError;
+
+    const updatedCharacter = await savePlayerCharacter(normalizedPlayerName, {
+      gold: currentGold - enchantCost
+    });
+
+    const updatedRow = await getInventorySnapshotRowByInstanceId(
+      normalizedPlayerName,
+      normalizedItemInstanceId
+    );
+
+    const updatedItem = updatedRow ? buildClientItemPayload(updatedRow) : null;
+
+    await supabase.from("enchant_transaction_log").insert({
+      player_name: normalizedPlayerName,
+      item_instance_id: normalizedItemInstanceId,
+      item_id: String(instance.item_id || "").trim(),
+      old_enchant_stage: enchantStage,
+      new_enchant_stage: newEnchantStage,
+      upgrade_level: upgradeLevel,
+      gold_cost: enchantCost
+    });
+
+    return {
+      ok: true,
+      reason: "ENCHANT_OK",
+      message: `Enchant successful: ${String(itemDef.name || "item")} is now enchant stage ${newEnchantStage}.`,
+      gold_spent: enchantCost,
+      gold_after: Math.max(0, Number(updatedCharacter.gold || 0)),
+      character: updatedCharacter,
+      item: updatedItem
+    };
+  } finally {
+    unlockEnchantAction(normalizedPlayerName);
   }
 }
 
