@@ -59,6 +59,9 @@ const playerCombatConfigs = new Map();
 const merchantActionLocks = new Map();
 // player_name -> true
 
+const forgeActionLocks = new Map();
+// player_name -> true
+
 const COMBAT_ROUND_INTERVAL_MS = 1800;
 const COMBAT_FINISH_CLEANUP_MS = 8000;
 const COMBAT_ACTION_INTERVAL_MS = 1000;
@@ -507,6 +510,40 @@ if (type === "inventory_get") {
   }
 
   await sendInventoryState(ws, playerName);
+  return;
+}
+
+if (type === "forge_item") {
+  const playerName = String(data.player_name || client?.player_name || "").trim();
+  const itemInstanceId = String(data.item_instance_id || "").trim();
+
+  if (!playerName || !itemInstanceId) {
+    sendWs(ws, {
+      type: "forge_result",
+      success: false,
+      reason: "MISSING_FIELDS",
+      message: "Missing forge_item fields."
+    });
+    return;
+  }
+
+  const result = await forgeItemInstance(playerName, itemInstanceId);
+
+  sendWs(ws, {
+    type: "forge_result",
+    player_name: playerName,
+    item_instance_id: itemInstanceId,
+    success: Boolean(result?.ok),
+    ...result
+  });
+
+  if (result?.ok) {
+    if (result.character) {
+      sendWs(ws, buildCharacterStatePayload(result.character));
+    }
+    await sendInventoryState(ws, playerName);
+  }
+
   return;
 }
 
@@ -1794,6 +1831,425 @@ async function unequipItemFromSlot(playerName, slotKey) {
   }
 
   return data || { ok: false, reason: "UNKNOWN_UNEQUIP_RESULT" };
+}
+
+const FORGE_MAGIC_ONLY_ITEM_NAMES = new Set([
+  "Iron Sword",
+  "Steel Sword",
+  "Tempered Steel Sword",
+  "Runed Steel Sword",
+  "Wooden Shield",
+  "Reinforced Wooden Shield",
+  "Iron Shield",
+  "Reinforced Iron Shield",
+  "Silver Ring",
+  "Gold Ring",
+  "Runed Ring",
+  "Silver Amulet",
+  "Gold Amulet",
+  "Runed Amulet",
+  "Linen Cape",
+  "Cloth Cape",
+  "Chainmail Cape",
+  "Shadow Cloak",
+  "Novat Backpack",
+  "Traveler Backpack",
+  "Runed Backpack"
+]);
+
+const FORGE_EXTRAORDINARY_ITEM_NAMES = new Set([
+  "Dark Iron Sword",
+  "Dark Iron Shield",
+  "Enchanted Ring",
+  "Enchanted Amulet",
+  "Dark Iron Cloak",
+  "Enchanted Backpack"
+]);
+
+function isForgeActionLocked(playerName) {
+  return forgeActionLocks.get(String(playerName || "").trim()) === true;
+}
+
+function lockForgeAction(playerName) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  if (!normalizedPlayerName) return;
+  forgeActionLocks.set(normalizedPlayerName, true);
+}
+
+function unlockForgeAction(playerName) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  if (!normalizedPlayerName) return;
+  forgeActionLocks.delete(normalizedPlayerName);
+}
+
+function getForgeItemType(itemDef = {}) {
+  return String(itemDef.item_type || itemDef.type || "").trim().toLowerCase();
+}
+
+function getForgeItemName(itemDef = {}) {
+  return String(itemDef.name || "").trim();
+}
+
+function getForgeSetName(itemDef = {}) {
+  return String(itemDef.set_name || "").trim();
+}
+
+function getForgeMaxEnchantStage(itemDef = {}) {
+  const itemName = getForgeItemName(itemDef);
+  const setName = getForgeSetName(itemDef);
+
+  if (["Silver Set", "Guardian Set", "Abyssal Set"].includes(setName)) {
+    return 4;
+  }
+
+  if (setName === "Iron Set") {
+    return 3;
+  }
+
+  if (["Leather Set", "Copper Set"].includes(setName)) {
+    return 2;
+  }
+
+  if (FORGE_EXTRAORDINARY_ITEM_NAMES.has(itemName)) {
+    return 3;
+  }
+
+  return 2;
+}
+
+function getForgeMaxUpgradeLevel(itemDef = {}) {
+  const maxStage = getForgeMaxEnchantStage(itemDef);
+
+  if (maxStage >= 4) return 49;
+  if (maxStage >= 3) return 39;
+  return 29;
+}
+
+function canForgeContinue(itemDef = {}, instance = {}) {
+  const upgradeLevel = Math.max(0, Number(instance.upgrade_level || 0));
+  const enchantStage = Math.max(0, Number(instance.enchant_stage || 0));
+  const maxUpgrade = getForgeMaxUpgradeLevel(itemDef);
+  const maxStage = getForgeMaxEnchantStage(itemDef);
+
+  if (upgradeLevel >= maxUpgrade) {
+    return {
+      ok: false,
+      reason: "MAX_UPGRADE_REACHED",
+      message: "This item reached the current max forge level."
+    };
+  }
+
+  if (upgradeLevel >= 40 && maxStage >= 4 && enchantStage < 4) {
+    return {
+      ok: false,
+      reason: "REQUIRES_LEGENDARY_ENCHANT",
+      message: "This item cannot continue forging until its Legendary enchantment is unlocked."
+    };
+  }
+
+  if (upgradeLevel >= 30 && maxStage >= 3 && enchantStage < 3) {
+    return {
+      ok: false,
+      reason: "REQUIRES_EXTRAORDINARY_ENCHANT",
+      message: "This item cannot continue forging until its Extraordinary enchantment is unlocked."
+    };
+  }
+
+  if (upgradeLevel >= 20 && enchantStage < 2) {
+    return {
+      ok: false,
+      reason: "REQUIRES_MAGIC_ENCHANT",
+      message: "This item cannot continue forging until its Magic enchantment is unlocked."
+    };
+  }
+
+  if (upgradeLevel >= 10 && enchantStage < 1) {
+    return {
+      ok: false,
+      reason: "REQUIRES_IMPROVED_ENCHANT",
+      message: "This item cannot continue forging until its Improved enchantment is unlocked."
+    };
+  }
+
+  return { ok: true };
+}
+
+function getBlacksmithUpgradeCostFromItem(itemDef = {}, instance = {}) {
+  const upgradeLevel = Math.max(0, Number(instance.upgrade_level || 0));
+  const itemType = getForgeItemType(itemDef);
+  const itemName = getForgeItemName(itemDef);
+  const setName = getForgeSetName(itemDef);
+
+  if (["Leather Set", "Copper Set", "Iron Set", "Silver Set", "Guardian Set", "Abyssal Set"].includes(setName)) {
+    switch (setName) {
+      case "Leather Set":
+        if (["armor", "shield", "cape", "weapon", "ring", "amulet", "backpack"].includes(itemType)) {
+          if (upgradeLevel < 10) return 4;
+          if (upgradeLevel < 20) return 5;
+          if (upgradeLevel < 30) return 6;
+        }
+        return 0;
+
+      case "Copper Set":
+        if (["armor", "shield", "cape", "weapon", "ring", "amulet", "backpack"].includes(itemType)) {
+          if (upgradeLevel < 10) return 6;
+          if (upgradeLevel < 20) return 8;
+          if (upgradeLevel < 30) return 10;
+        }
+        return 0;
+
+      case "Iron Set":
+        if (["weapon", "shield", "armor", "cape"].includes(itemType)) {
+          if (upgradeLevel < 10) return 10;
+          if (upgradeLevel < 20) return 12;
+          if (upgradeLevel < 30) return 14;
+          if (upgradeLevel < 40) return 16;
+        } else if (["ring", "amulet", "backpack"].includes(itemType)) {
+          if (upgradeLevel < 10) return 8;
+          if (upgradeLevel < 20) return 10;
+          if (upgradeLevel < 30) return 12;
+          if (upgradeLevel < 40) return 14;
+        }
+        return 0;
+
+      case "Silver Set":
+      case "Guardian Set":
+      case "Abyssal Set":
+        if (["weapon", "shield", "armor", "cape"].includes(itemType)) {
+          if (upgradeLevel < 10) return 15;
+          if (upgradeLevel < 20) return 18;
+          if (upgradeLevel < 30) return 22;
+          if (upgradeLevel < 40) return 26;
+          if (upgradeLevel < 50) return 30;
+        } else if (["ring", "amulet", "backpack"].includes(itemType)) {
+          if (upgradeLevel < 10) return 12;
+          if (upgradeLevel < 20) return 15;
+          if (upgradeLevel < 30) return 18;
+          if (upgradeLevel < 40) return 22;
+          if (upgradeLevel < 50) return 26;
+        }
+        return 0;
+    }
+  }
+
+  if (FORGE_MAGIC_ONLY_ITEM_NAMES.has(itemName)) {
+    if (["weapon", "shield"].includes(itemType)) {
+      if (upgradeLevel < 10) return 6;
+      if (upgradeLevel < 20) return 8;
+      if (upgradeLevel < 30) return 10;
+      return 0;
+    }
+
+    if (["ring", "amulet", "cape", "backpack"].includes(itemType)) {
+      if (upgradeLevel < 10) return 5;
+      if (upgradeLevel < 20) return 7;
+      if (upgradeLevel < 30) return 9;
+      return 0;
+    }
+  }
+
+  if (FORGE_EXTRAORDINARY_ITEM_NAMES.has(itemName)) {
+    if (["weapon", "shield"].includes(itemType)) {
+      if (upgradeLevel < 10) return 8;
+      if (upgradeLevel < 20) return 10;
+      if (upgradeLevel < 30) return 12;
+      if (upgradeLevel < 40) return 14;
+      return 0;
+    }
+
+    if (["ring", "amulet", "cape", "backpack"].includes(itemType)) {
+      if (upgradeLevel < 10) return 7;
+      if (upgradeLevel < 20) return 9;
+      if (upgradeLevel < 30) return 11;
+      if (upgradeLevel < 40) return 13;
+      return 0;
+    }
+  }
+
+  return 0;
+}
+
+async function getInventorySnapshotRowByInstanceId(playerName, itemInstanceId) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  const normalizedItemInstanceId = String(itemInstanceId || "").trim();
+
+  if (!normalizedPlayerName || !normalizedItemInstanceId) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("player_inventory_snapshot")
+    .select("*")
+    .eq("player_name", normalizedPlayerName)
+    .eq("item_instance_id", normalizedItemInstanceId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data ? normalizeInventoryRow(data) : null;
+}
+
+async function forgeItemInstance(playerName, itemInstanceId) {
+  const normalizedPlayerName = String(playerName || "").trim();
+  const normalizedItemInstanceId = String(itemInstanceId || "").trim();
+
+  if (!normalizedPlayerName || !normalizedItemInstanceId) {
+    return {
+      ok: false,
+      reason: "MISSING_FIELDS",
+      message: "Missing required forge fields."
+    };
+  }
+
+  if (isForgeActionLocked(normalizedPlayerName)) {
+    return {
+      ok: false,
+      reason: "FORGE_BUSY",
+      message: "Please wait a moment before trying again."
+    };
+  }
+
+  lockForgeAction(normalizedPlayerName);
+
+  try {
+    const { data: instance, error: instanceError } = await supabase
+      .from("player_item_instances")
+      .select("*")
+      .eq("item_instance_id", normalizedItemInstanceId)
+      .eq("player_name", normalizedPlayerName)
+      .maybeSingle();
+
+    if (instanceError) throw instanceError;
+    if (!instance) {
+      return {
+        ok: false,
+        reason: "ITEM_INSTANCE_NOT_FOUND",
+        message: "Item instance not found."
+      };
+    }
+
+    const { data: itemDef, error: itemDefError } = await supabase
+      .from("item_definitions")
+      .select("*")
+      .eq("item_id", instance.item_id)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (itemDefError) throw itemDefError;
+    if (!itemDef) {
+      return {
+        ok: false,
+        reason: "ITEM_DEFINITION_NOT_FOUND",
+        message: "Item definition not found."
+      };
+    }
+
+    const equipSlot = String(itemDef.equip_slot || "").trim();
+    const allowedSlots = new Set([
+      "main_weapon",
+      "secondary_weapon",
+      "helmet",
+      "shoulder",
+      "chest",
+      "bracers",
+      "gloves",
+      "belt",
+      "pants",
+      "boots",
+      "ring",
+      "amulet",
+      "cape",
+      "backpack"
+    ]);
+
+    if (!allowedSlots.has(equipSlot)) {
+      return {
+        ok: false,
+        reason: "ITEM_NOT_UPGRADEABLE",
+        message: "This item cannot be forged."
+      };
+    }
+
+    const forgeCheck = canForgeContinue(itemDef, instance);
+    if (!forgeCheck.ok) {
+      return {
+        ok: false,
+        reason: forgeCheck.reason,
+        message: forgeCheck.message
+      };
+    }
+
+    const upgradeCost = getBlacksmithUpgradeCostFromItem(itemDef, instance);
+    if (upgradeCost <= 0) {
+      return {
+        ok: false,
+        reason: "INVALID_FORGE_COST",
+        message: "This item has no valid forge cost."
+      };
+    }
+
+    const character = await getOrCreatePlayerCharacter(normalizedPlayerName);
+    const currentGold = Math.max(0, Number(character.gold || 0));
+
+    if (currentGold < upgradeCost) {
+      return {
+        ok: false,
+        reason: "INSUFFICIENT_GOLD",
+        message: "Not enough gold for upgrade."
+      };
+    }
+
+    const newUpgradeLevel = Math.max(0, Number(instance.upgrade_level || 0)) + 1;
+
+    const { error: updateError } = await supabase
+      .from("player_item_instances")
+      .update({
+        upgrade_level: newUpgradeLevel,
+        updated_at: new Date().toISOString()
+      })
+      .eq("item_instance_id", normalizedItemInstanceId)
+      .eq("player_name", normalizedPlayerName);
+
+    if (updateError) throw updateError;
+
+    const updatedCharacter = await savePlayerCharacter(normalizedPlayerName, {
+      gold: currentGold - upgradeCost
+    });
+
+    const updatedRow = await getInventorySnapshotRowByInstanceId(
+      normalizedPlayerName,
+      normalizedItemInstanceId
+    );
+
+    const updatedItem = updatedRow ? buildClientItemPayload(updatedRow) : null;
+
+    const { error: logError } = await supabase
+      .from("forge_transaction_log")
+      .insert({
+        player_name: normalizedPlayerName,
+        item_instance_id: normalizedItemInstanceId,
+        item_id: String(instance.item_id || "").trim(),
+        old_upgrade_level: Math.max(0, Number(instance.upgrade_level || 0)),
+        new_upgrade_level: newUpgradeLevel,
+        enchant_stage: Math.max(0, Number(instance.enchant_stage || 0)),
+        gold_cost: upgradeCost
+      });
+
+    if (logError) {
+      console.error("FORGE LOG ERROR ->", logError);
+    }
+
+    return {
+      ok: true,
+      reason: "FORGE_OK",
+      message: `Upgrade successful: ${String(itemDef.name || "item")} is now +${newUpgradeLevel}.`,
+      gold_spent: upgradeCost,
+      gold_after: Math.max(0, Number(updatedCharacter.gold || 0)),
+      character: updatedCharacter,
+      item: updatedItem
+    };
+  } finally {
+    unlockForgeAction(normalizedPlayerName);
+  }
 }
 
 function calculateLevelFromTotalXp(totalXp) {
