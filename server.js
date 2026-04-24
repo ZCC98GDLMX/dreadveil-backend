@@ -2229,6 +2229,117 @@ function getEnchantCost(itemDef = {}, instance = {}) {
   return 0;
 }
 
+
+
+    const equipSlot = String(itemDef.equip_slot || "").trim();
+    const allowedSlots = new Set([
+      "main_weapon",
+      "secondary_weapon",
+      "helmet",
+      "shoulder",
+      "chest",
+      "bracers",
+      "gloves",
+      "belt",
+      "pants",
+      "boots",
+      "ring",
+      "amulet",
+      "cape",
+      "backpack"
+    ]);
+
+    if (!allowedSlots.has(equipSlot)) {
+      return {
+        ok: false,
+        reason: "ITEM_NOT_UPGRADEABLE",
+        message: "This item cannot be forged."
+      };
+    }
+
+    const forgeCheck = canForgeContinue(itemDef, instance);
+    if (!forgeCheck.ok) {
+      return {
+        ok: false,
+        reason: forgeCheck.reason,
+        message: forgeCheck.message
+      };
+    }
+
+    const upgradeCost = getBlacksmithUpgradeCostFromItem(itemDef, instance);
+    if (upgradeCost <= 0) {
+      return {
+        ok: false,
+        reason: "INVALID_FORGE_COST",
+        message: "This item has no valid forge cost."
+      };
+    }
+
+    const character = await getOrCreatePlayerCharacter(normalizedPlayerName);
+    const currentGold = Math.max(0, Number(character.gold || 0));
+
+    if (currentGold < upgradeCost) {
+      return {
+        ok: false,
+        reason: "INSUFFICIENT_GOLD",
+        message: "Not enough gold for upgrade."
+      };
+    }
+
+    const newUpgradeLevel = Math.max(0, Number(instance.upgrade_level || 0)) + 1;
+
+    const { error: updateError } = await supabase
+      .from("player_item_instances")
+      .update({
+        upgrade_level: newUpgradeLevel,
+        updated_at: new Date().toISOString()
+      })
+      .eq("item_instance_id", normalizedItemInstanceId)
+      .eq("player_name", normalizedPlayerName);
+
+    if (updateError) throw updateError;
+
+    const updatedCharacter = await savePlayerCharacter(normalizedPlayerName, {
+      gold: currentGold - upgradeCost
+    });
+
+    const updatedRow = await getInventorySnapshotRowByInstanceId(
+      normalizedPlayerName,
+      normalizedItemInstanceId
+    );
+
+    const updatedItem = updatedRow ? buildClientItemPayload(updatedRow) : null;
+
+    const { error: logError } = await supabase
+      .from("forge_transaction_log")
+      .insert({
+        player_name: normalizedPlayerName,
+        item_instance_id: normalizedItemInstanceId,
+        item_id: String(instance.item_id || "").trim(),
+        old_upgrade_level: Math.max(0, Number(instance.upgrade_level || 0)),
+        new_upgrade_level: newUpgradeLevel,
+        enchant_stage: Math.max(0, Number(instance.enchant_stage || 0)),
+        gold_cost: upgradeCost
+      });
+
+    if (logError) {
+      console.error("FORGE LOG ERROR ->", logError);
+    }
+
+    return {
+      ok: true,
+      reason: "FORGE_OK",
+      message: `Upgrade successful: ${String(itemDef.name || "item")} is now +${newUpgradeLevel}.`,
+      gold_spent: upgradeCost,
+      gold_after: Math.max(0, Number(updatedCharacter.gold || 0)),
+      character: updatedCharacter,
+      item: updatedItem
+    };
+  } finally {
+    unlockForgeAction(normalizedPlayerName);
+  }
+}
+
 async function enchantItemInstance(playerName, itemInstanceId) {
   const normalizedPlayerName = String(playerName || "").trim();
   const normalizedItemInstanceId = String(itemInstanceId || "").trim();
@@ -2388,115 +2499,6 @@ async function enchantItemInstance(playerName, itemInstanceId) {
     };
   } finally {
     unlockEnchantAction(normalizedPlayerName);
-  }
-}
-
-    const equipSlot = String(itemDef.equip_slot || "").trim();
-    const allowedSlots = new Set([
-      "main_weapon",
-      "secondary_weapon",
-      "helmet",
-      "shoulder",
-      "chest",
-      "bracers",
-      "gloves",
-      "belt",
-      "pants",
-      "boots",
-      "ring",
-      "amulet",
-      "cape",
-      "backpack"
-    ]);
-
-    if (!allowedSlots.has(equipSlot)) {
-      return {
-        ok: false,
-        reason: "ITEM_NOT_UPGRADEABLE",
-        message: "This item cannot be forged."
-      };
-    }
-
-    const forgeCheck = canForgeContinue(itemDef, instance);
-    if (!forgeCheck.ok) {
-      return {
-        ok: false,
-        reason: forgeCheck.reason,
-        message: forgeCheck.message
-      };
-    }
-
-    const upgradeCost = getBlacksmithUpgradeCostFromItem(itemDef, instance);
-    if (upgradeCost <= 0) {
-      return {
-        ok: false,
-        reason: "INVALID_FORGE_COST",
-        message: "This item has no valid forge cost."
-      };
-    }
-
-    const character = await getOrCreatePlayerCharacter(normalizedPlayerName);
-    const currentGold = Math.max(0, Number(character.gold || 0));
-
-    if (currentGold < upgradeCost) {
-      return {
-        ok: false,
-        reason: "INSUFFICIENT_GOLD",
-        message: "Not enough gold for upgrade."
-      };
-    }
-
-    const newUpgradeLevel = Math.max(0, Number(instance.upgrade_level || 0)) + 1;
-
-    const { error: updateError } = await supabase
-      .from("player_item_instances")
-      .update({
-        upgrade_level: newUpgradeLevel,
-        updated_at: new Date().toISOString()
-      })
-      .eq("item_instance_id", normalizedItemInstanceId)
-      .eq("player_name", normalizedPlayerName);
-
-    if (updateError) throw updateError;
-
-    const updatedCharacter = await savePlayerCharacter(normalizedPlayerName, {
-      gold: currentGold - upgradeCost
-    });
-
-    const updatedRow = await getInventorySnapshotRowByInstanceId(
-      normalizedPlayerName,
-      normalizedItemInstanceId
-    );
-
-    const updatedItem = updatedRow ? buildClientItemPayload(updatedRow) : null;
-
-    const { error: logError } = await supabase
-      .from("forge_transaction_log")
-      .insert({
-        player_name: normalizedPlayerName,
-        item_instance_id: normalizedItemInstanceId,
-        item_id: String(instance.item_id || "").trim(),
-        old_upgrade_level: Math.max(0, Number(instance.upgrade_level || 0)),
-        new_upgrade_level: newUpgradeLevel,
-        enchant_stage: Math.max(0, Number(instance.enchant_stage || 0)),
-        gold_cost: upgradeCost
-      });
-
-    if (logError) {
-      console.error("FORGE LOG ERROR ->", logError);
-    }
-
-    return {
-      ok: true,
-      reason: "FORGE_OK",
-      message: `Upgrade successful: ${String(itemDef.name || "item")} is now +${newUpgradeLevel}.`,
-      gold_spent: upgradeCost,
-      gold_after: Math.max(0, Number(updatedCharacter.gold || 0)),
-      character: updatedCharacter,
-      item: updatedItem
-    };
-  } finally {
-    unlockForgeAction(normalizedPlayerName);
   }
 }
 
