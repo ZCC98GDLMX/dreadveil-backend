@@ -468,7 +468,9 @@ wsClients.set(ws, {
   ws.on("message", async (rawMessage) => {
     try {
       const text = rawMessage.toString();
-      console.log("WS MESSAGE ->", text);
+      if (!text.includes("presence_move")) {
+        console.log("WS MESSAGE ->", text);
+      }
 
       const data = JSON.parse(text);
       const type = data.type;
@@ -1612,7 +1614,7 @@ async function getPlayerInventoryRows(playerName) {
   if (error) {
     throw error;
   }
-  console.log("RAW INVENTORY DATA ->", data);
+  // console.log("RAW INVENTORY DATA ->", data);
   return Array.isArray(data) ? data.map(normalizeInventoryRow) : [];
 }
 
