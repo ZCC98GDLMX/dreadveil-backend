@@ -469,8 +469,8 @@ wsClients.set(ws, {
     try {
       const text = rawMessage.toString();
       if (!text.includes("presence_move")) {
-        console.log("WS MESSAGE ->", text);
-      }
+        ;
+    }
 
       const data = JSON.parse(text);
       const type = data.type;
@@ -1177,7 +1177,7 @@ mapPresence.set(playerName, existingEntry);
         const playerName = String(data.player_name || "").trim();
         const isTyping = Boolean(data.is_typing);
 
-        console.log("TYPING EVENT ->", playerName, isTyping);
+        
 
         if (!playerName) {
           sendWs(ws, { type: "error", message: "Missing player_name" });
@@ -1215,13 +1215,6 @@ mapPresence.set(playerName, existingEntry);
 
   await upsertPlayerCombatProfile(profile);
 
-  console.log("COMBAT PROFILE SYNCED ->", {
-    playerName: profile.player_name,
-    level: profile.player_level,
-    maxHp: profile.max_hp,
-    maxAp: profile.max_ap
-  });
-
   sendWs(ws, {
     type: "combat_profile_synced",
     player_name: profile.player_name
@@ -1246,11 +1239,7 @@ if (type === "combat_config_update") {
     target_strategy: targetStrategy
   });
 
-  console.log("COMBAT CONFIG UPDATED ->", {
-    playerName,
-    attackSequence: savedConfig.attack_sequence,
-    targetStrategy: savedConfig.target_strategy
-  });
+  
 
   sendWs(ws, {
     type: "combat_config_updated",
@@ -1271,13 +1260,7 @@ if (type === "combat_create_request") {
   const attackSequence = normalizeAttackSequence(data.attack_sequence);
   const targetStrategy = normalizeTargetStrategy(data.target_strategy);
 
-  console.log("COMBAT CREATE REQUEST ->", {
-    playerName,
-    encounterId,
-    tileId,
-    attackSequence,
-    targetStrategy
-  });
+ 
 
   if (!playerName || !encounterId || !tileId) {
     console.log("COMBAT CREATE ABORT -> missing fields");
@@ -1285,9 +1268,9 @@ if (type === "combat_create_request") {
     return;
   }
 
-  console.log("COMBAT CREATE STEP 1 -> finding party");
+  //console.log("COMBAT CREATE STEP 1 -> finding party");
   const party = await findPartyByPlayer(playerName);
-  console.log("COMBAT CREATE STEP 1 RESULT ->", party);
+  //console.log("COMBAT CREATE STEP 1 RESULT ->", party);
 
   if (!party || !party.party_id) {
     console.log("COMBAT CREATE ABORT -> player is not in a party");
@@ -1295,7 +1278,7 @@ if (type === "combat_create_request") {
     return;
   }
 
-  console.log("COMBAT CREATE STEP 2 -> checking existing combat");
+  //console.log("COMBAT CREATE STEP 2 -> checking existing combat");
 const existingCombat = findCombatByPlayer(playerName);
 if (existingCombat) {
   if (existingCombat.status === "active") {
@@ -1309,7 +1292,7 @@ if (existingCombat) {
   destroyCombatInstance(existingCombat.combat_id);
 }
 
-  console.log("COMBAT CREATE STEP 3 -> creating combat instance");
+  //console.log("COMBAT CREATE STEP 3 -> creating combat instance");
   const combat = await createPartyCombatInstance(
     party.party_id,
     encounterId,
@@ -1320,9 +1303,9 @@ if (existingCombat) {
       target_strategy: targetStrategy
     }
   );
-  console.log("COMBAT CREATE STEP 3 RESULT ->", combat.combat_id);
+  //console.log("COMBAT CREATE STEP 3 RESULT ->", combat.combat_id);
 
-  console.log("COMBAT CREATE STEP 4 -> broadcasting combat_created");
+  //console.log("COMBAT CREATE STEP 4 -> broadcasting combat_created");
   broadcastToParty(party.party_id, {
     type: "combat_created",
     combat_id: combat.combat_id,
@@ -1331,13 +1314,13 @@ if (existingCombat) {
     tile_id: tileId
   });
 
-  console.log("COMBAT CREATE STEP 5 -> broadcasting combat_state");
+  //console.log("COMBAT CREATE STEP 5 -> broadcasting combat_state");
   broadcastCombatState(combat.combat_id);
 
-  console.log("COMBAT CREATE STEP 6 -> starting combat loop");
+  //console.log("COMBAT CREATE STEP 6 -> starting combat loop");
   startCombatLoop(combat.combat_id);
 
-  console.log("COMBAT CREATE DONE ->", combat.combat_id);
+ // console.log("COMBAT CREATE DONE ->", combat.combat_id);
   return;
 }
 
